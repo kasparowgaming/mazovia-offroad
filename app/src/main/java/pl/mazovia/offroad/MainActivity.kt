@@ -30,6 +30,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.d("MazoviaOffroad", "MainActivity initialized")
         enableEdgeToEdge()
 
         // Restore mode from saved state
