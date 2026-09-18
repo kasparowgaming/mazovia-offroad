@@ -1,0 +1,23 @@
+{
+  "settings": {
+    "minzoom": 6,
+    "maxzoom": 14,
+    "basezoom": 14,
+    "include_ids": false,
+    "name": "Mazovia Offroad Siedlce Prototype",
+    "version": "1.0",
+    "description": "Custom PMTiles extract for Mazovia Offroad styling prototype.",
+    "compress": "gzip",
+    "metadata": {
+      "attribution": "© OpenStreetMap contributors"
+    }
+  },
+  "layers": {
+    "transportation": { "minzoom": 6, "maxzoom": 14 },
+    "landcover": { "minzoom": 6, "maxzoom": 14 },
+    "water": { "minzoom": 6, "maxzoom": 14 },
+    "waterway": { "minzoom": 10, "maxzoom": 14 },
+    "building": { "minzoom": 13, "maxzoom": 14 },
+    "place": { "minzoom": 6, "maxzoom": 14 }
+  }
+}
