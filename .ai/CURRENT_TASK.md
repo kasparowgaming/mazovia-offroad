@@ -1,23 +1,20 @@
 # Current Engineering Task
 
-**Task:** Mazovia regional vector tileset schema audit and generator selection.
+**Task:** Generate and validate a small custom Mazovia Offroad PMTiles prototype.
 **Owner:** GEMINI
-**Status:** IN PROGRESS
+**Status:** COMPLETED
 **Started:** 2026-09-18
-**Target Completion:** Data architecture report delivery
+**Completed:** 2026-09-18
 
 ## Objective
-Design the vector-tile DATA SCHEMA for Mazovia Offroad before generating the regional production-quality PMTiles archive. Evaluate and select the best vector tile generator (Tilemaker vs Planetiler), determine the PBF source, define zoom strategies, and propose a custom schema preserving critical enduro tags (surface, tracktype, highway, access, etc.).
+Generate a small custom PMTiles prototype for the Siedlce-area using the approved Mazovia Offroad vector schema, then inspect the ACTUAL attributes present in the resulting vector tiles.
 
-## Constraints
-- Do NOT style yet.
-- Do NOT generate the full dataset yet.
-- Do NOT modify Android code.
-- Must preserve exact `surface`, `tracktype`, and off-road tags. Stock schemas that collapse these into `paved`/`unpaved` are rejected.
-
-## Next Steps
-- Audit stock schemas (OpenMapTiles, Protomaps, etc.).
-- Compare Tilemaker vs Planetiler for Windows / PMTiles output.
-- Define Regional bounds and PBF source.
-- Define Target custom schema and Zoom strategy.
-- Output final deliverable report.
+## Accomplished
+- WSL2 Ubuntu environment verified and Tilemaker v3.1.0 built from source.
+- PBF data downloaded and output directories established outside Git.
+- Created custom `config.json` and `process.lua` schema focusing on enduro tags.
+- Successfully generated PMTiles for Siedlce area.
+- Inspected generated tiles using Python script:
+  - Verified `highway`, `surface`, and `tracktype` are preserved and filterable.
+  - Distinct surfaces include sand, dirt, grass, gravel.
+  - Distinct tracktypes include grade1-5.
