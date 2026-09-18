@@ -4,3 +4,10 @@ Decision: Adopt the file-based multi-agent workflow defined in Mazovia_Gemini_Qw
 Reason: To delegate bounded tasks to local Qwen.
 Affected areas: .ai/ workflow metadata, scripts/
 Do not revisit unless: Required by workflow changes.
+
+DECISION-002 — Preserve OSMDroid fallback and investigate MapLibre Native
+Date: 2026-09-18
+Decision: Evaluate MapLibre Native as the preferred future map-rendering candidate, but preserve current working OSMDroid implementation as fallback. Do not replace OSMDroid until a MapLibre POC is physically verified. Do NOT implement Mapsforge yet. GraphHopper routing must remain independent from map-rendering-engine experiments. Do not fabricate terrain/surface data when real source data is unavailable.
+Reason: MapLibre Native offers GPU vector rendering, smoother native camera primitives, bearing/zoom/tilt animation, custom Style JSON, offline vector maps, and PMTiles feasibility, enabling greater control over off-road cartography.
+Affected areas: Map rendering, map UI components.
+Do not revisit unless: MapLibre Native POC proves unfeasible on target hardware.
