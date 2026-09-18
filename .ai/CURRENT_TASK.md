@@ -1,19 +1,24 @@
 # Current Engineering Task
 
-**Task:** MapLibre Native feasibility and isolated proof of concept while preserving OSMDroid as the verified fallback.
+**Task:** POC-B — verify local offline vector PMTiles rendering in MapLibre while preserving OSMDroid and GraphHopper.
 **Owner:** GEMINI
-**Status:** COMPLETED
+**Status:** IN PROGRESS
 **Started:** 2026-09-18
-**Target Completion:** POC-A physical verification
+**Target Completion:** POC-B physical offline verification
 
 ## Objective
-Evaluate MapLibre Native as the future map-rendering candidate, proving it can render the route, follow the GPS marker, rotate heading, and survive the Android lifecycle on the target device.
+Prove that MapLibre Native can render vector tiles from a local PMTiles archive on the physical Android device with no network connection, using `pmtiles://file://<absolute-path>`.
 
-## Outcome
-- MapLibre POC-A successfully proved rendering/integration on the physical device.
-- OSMDroid remains the verified fallback.
-- MapLibre is now the preferred candidate for continued investigation.
-- No production migration decision is final until offline PMTiles and custom styling are tested.
+## Constraints
+- Do NOT modify GraphHopper routing.
+- Do NOT remove OSMDroid fallback.
+- Do NOT build a download manager; rely on manual ADB push for the test PMTiles file.
+- Do NOT use HTTP/HTTPS basemaps in the POC-B style.
+- Use the smallest possible style for rendering proof.
 
 ## Next Steps
-- POC-B: local offline PMTiles rendering in MapLibre.
+- Determine a verifiable vector PMTiles sample file.
+- Update `MapEngine` enum.
+- Implement PMTiles vector source and basic layers in `MapLibreViewContainer`.
+- Build the APK.
+- Provide physical offline test instructions to the user.

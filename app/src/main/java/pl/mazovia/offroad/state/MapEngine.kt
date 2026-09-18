@@ -6,5 +6,6 @@ package pl.mazovia.offroad.state
  */
 enum class MapEngine {
     OSMDROID,
-    MAPLIBRE
+    MAPLIBRE,
+    MAPLIBRE_PMTILES_POC
 }

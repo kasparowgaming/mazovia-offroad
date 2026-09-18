@@ -236,9 +236,22 @@ private fun PortraitRidingLayout(
             }
             
             // POC Opt-in toggle:
-            val mapEngine = MapEngine.MAPLIBRE // Default OSMDROID, testing MapLibre for POC
+            val mapEngine = MapEngine.MAPLIBRE_PMTILES_POC // Default OSMDROID, testing MapLibre for POC
             
             when (mapEngine) {
+                MapEngine.MAPLIBRE_PMTILES_POC -> {
+                    pl.mazovia.offroad.ui.map.components.MapLibrePMTilesPOCContainer(
+                        currentPosition = navState.currentPosition,
+                        destination = navState.route?.destination,
+                        routePoints = routePoints,
+                        centerRequest = centerRequest,
+                        onLongPress = { },
+                        isFollowMode = isFollowMode,
+                        bearing = navState.currentBearing,
+                        onUserPan = { isFollowMode = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 MapEngine.MAPLIBRE -> {
                     MapLibreViewContainer(
                         currentPosition = navState.currentPosition,
@@ -453,9 +466,22 @@ private fun LandscapeRidingLayout(
             }
             
             // POC Opt-in toggle:
-            val mapEngine = MapEngine.MAPLIBRE // Default OSMDROID, testing MapLibre for POC
+            val mapEngine = MapEngine.MAPLIBRE_PMTILES_POC // Default OSMDROID, testing MapLibre for POC
             
             when (mapEngine) {
+                MapEngine.MAPLIBRE_PMTILES_POC -> {
+                    pl.mazovia.offroad.ui.map.components.MapLibrePMTilesPOCContainer(
+                        currentPosition = navState.currentPosition,
+                        destination = navState.route?.destination,
+                        routePoints = routePoints,
+                        centerRequest = centerRequest,
+                        onLongPress = { },
+                        isFollowMode = isFollowMode,
+                        bearing = navState.currentBearing,
+                        onUserPan = { isFollowMode = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
                 MapEngine.MAPLIBRE -> {
                     MapLibreViewContainer(
                         currentPosition = navState.currentPosition,
