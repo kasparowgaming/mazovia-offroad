@@ -24,6 +24,8 @@ import pl.mazovia.offroad.designsystem.theme.MazoviaColors
 import pl.mazovia.offroad.domain.model.NavigationStatus
 import pl.mazovia.offroad.navigation.NavigationManager
 import pl.mazovia.offroad.state.AppModeManager
+import pl.mazovia.offroad.state.MapEngine
+import pl.mazovia.offroad.ui.map.components.MapLibreViewContainer
 import pl.mazovia.offroad.ui.map.components.MapViewContainer
 
 /**
@@ -232,17 +234,38 @@ private fun PortraitRidingLayout(
             val routePoints = remember(routeId) {
                 navState.route?.allPoints ?: emptyList()
             }
-            MapViewContainer(
-                currentPosition = navState.currentPosition,
-                destination = navState.route?.destination,
-                routePoints = routePoints,
-                centerRequest = centerRequest,
-                onLongPress = { },
-                isFollowMode = isFollowMode,
-                bearing = navState.currentBearing,
-                onUserPan = { isFollowMode = false },
-                modifier = Modifier.fillMaxSize()
-            )
+            
+            // POC Opt-in toggle:
+            val mapEngine = MapEngine.MAPLIBRE // Default OSMDROID, testing MapLibre for POC
+            
+            when (mapEngine) {
+                MapEngine.MAPLIBRE -> {
+                    MapLibreViewContainer(
+                        currentPosition = navState.currentPosition,
+                        destination = navState.route?.destination,
+                        routePoints = routePoints,
+                        centerRequest = centerRequest,
+                        onLongPress = { },
+                        isFollowMode = isFollowMode,
+                        bearing = navState.currentBearing,
+                        onUserPan = { isFollowMode = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                MapEngine.OSMDROID -> {
+                    MapViewContainer(
+                        currentPosition = navState.currentPosition,
+                        destination = navState.route?.destination,
+                        routePoints = routePoints,
+                        centerRequest = centerRequest,
+                        onLongPress = { },
+                        isFollowMode = isFollowMode,
+                        bearing = navState.currentBearing,
+                        onUserPan = { isFollowMode = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
 
             // Map Controls (Right edge)
             Column(
@@ -428,17 +451,38 @@ private fun LandscapeRidingLayout(
             val routePoints = remember(routeId) {
                 navState.route?.allPoints ?: emptyList()
             }
-            MapViewContainer(
-                currentPosition = navState.currentPosition,
-                destination = navState.route?.destination,
-                routePoints = routePoints,
-                centerRequest = centerRequest,
-                onLongPress = { },
-                isFollowMode = isFollowMode,
-                bearing = navState.currentBearing,
-                onUserPan = { isFollowMode = false },
-                modifier = Modifier.fillMaxSize()
-            )
+            
+            // POC Opt-in toggle:
+            val mapEngine = MapEngine.MAPLIBRE // Default OSMDROID, testing MapLibre for POC
+            
+            when (mapEngine) {
+                MapEngine.MAPLIBRE -> {
+                    MapLibreViewContainer(
+                        currentPosition = navState.currentPosition,
+                        destination = navState.route?.destination,
+                        routePoints = routePoints,
+                        centerRequest = centerRequest,
+                        onLongPress = { },
+                        isFollowMode = isFollowMode,
+                        bearing = navState.currentBearing,
+                        onUserPan = { isFollowMode = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+                MapEngine.OSMDROID -> {
+                    MapViewContainer(
+                        currentPosition = navState.currentPosition,
+                        destination = navState.route?.destination,
+                        routePoints = routePoints,
+                        centerRequest = centerRequest,
+                        onLongPress = { },
+                        isFollowMode = isFollowMode,
+                        bearing = navState.currentBearing,
+                        onUserPan = { isFollowMode = false },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
 
             // Recenter Button in Landscape
             androidx.compose.material3.IconButton(

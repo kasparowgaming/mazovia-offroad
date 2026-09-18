@@ -83,6 +83,9 @@ dependencies {
     // OSMDroid for map
     implementation("org.osmdroid:osmdroid-android:6.1.20")
 
+    // MapLibre Native for Map Rendering POC
+    implementation("org.maplibre.gl:android-sdk:11.11.0")
+
     // GraphHopper
     implementation("com.graphhopper:graphhopper-core:9.1")
 
