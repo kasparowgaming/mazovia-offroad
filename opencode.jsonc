@@ -1,0 +1,23 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "localqwen/qwen35-9b",
+  "provider": {
+    "localqwen": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Qwen via llama.cpp",
+      "options": {
+        "baseURL": "http://127.0.0.1:8080/v1"
+      },
+      "models": {
+        "qwen35-9b": {
+          "name": "Local qwen35-9b",
+          "tool_call": true,
+          "limit": {
+            "context": 16384,
+            "output": 4096
+          }
+        }
+      }
+    }
+  }
+}
