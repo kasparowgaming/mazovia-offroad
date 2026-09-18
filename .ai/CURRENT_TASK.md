@@ -1,16 +1,23 @@
 # Current Engineering Task
 
-**Task:** POC-B — verify local offline vector PMTiles rendering in MapLibre while preserving OSMDroid and GraphHopper.
+**Task:** Mazovia regional vector tileset schema audit and generator selection.
 **Owner:** GEMINI
-**Status:** COMPLETED
+**Status:** IN PROGRESS
 **Started:** 2026-09-18
-**Target Completion:** POC-B physical offline verification
+**Target Completion:** Data architecture report delivery
 
 ## Objective
-Prove that MapLibre Native can render vector tiles from a local PMTiles archive on the physical Android device with no network connection, using `pmtiles://file://<absolute-path>`.
+Design the vector-tile DATA SCHEMA for Mazovia Offroad before generating the regional production-quality PMTiles archive. Evaluate and select the best vector tile generator (Tilemaker vs Planetiler), determine the PBF source, define zoom strategies, and propose a custom schema preserving critical enduro tags (surface, tracktype, highway, access, etc.).
 
-## Outcome
-MapLibre successfully renders local vector PMTiles on the physical device with all network connectivity disabled.
+## Constraints
+- Do NOT style yet.
+- Do NOT generate the full dataset yet.
+- Do NOT modify Android code.
+- Must preserve exact `surface`, `tracktype`, and off-road tags. Stock schemas that collapse these into `paved`/`unpaved` are rejected.
 
 ## Next Steps
-Audit/generate a Mazovia regional vector tileset preserving highway, surface, tracktype and other off-road OSM attributes, then create Mazovia Offroad Style v1.
+- Audit stock schemas (OpenMapTiles, Protomaps, etc.).
+- Compare Tilemaker vs Planetiler for Windows / PMTiles output.
+- Define Regional bounds and PBF source.
+- Define Target custom schema and Zoom strategy.
+- Output final deliverable report.

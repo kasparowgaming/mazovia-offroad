@@ -1,6 +1,6 @@
 PROJECT: Mazovia Offroad — Android navigation app for enduro/adventure motorcycles.
-CURRENT_STABLE_STATE: POC-A MapLibre integration plus preserved OSMDroid fallback.
-CURRENT_MAJOR_GOAL: Verify local offline PMTiles rendering in MapLibre.
+CURRENT_STABLE_STATE: POC-B completed; MapLibre successfully renders local vector PMTiles on physical device.
+CURRENT_MAJOR_GOAL: Design the vector-tile data schema for Mazovia Offroad and select the generator architecture.
 LAST_VERIFIED_MILESTONE: MapLibre successfully renders local vector PMTiles on the physical device with all network connectivity disabled.
 CURRENT_BLOCKER: NONE
 
@@ -8,7 +8,7 @@ ACTIVE_AGENT: GEMINI
 ACTIVE_TASK_ID: NONE
 LOCAL_TASK_STATUS: IDLE
 
-LAST_ACCEPTED_LOCAL_COMMIT: d815517e5a60a7e6b0cfd70f90e0b3c6628cb3b8
+LAST_ACCEPTED_LOCAL_COMMIT: ffcd9e730d551bb748a6d84fec70a7915709c818
 PILOT_ACCEPTED_COUNT: 3
-NEXT_HIGH_LEVEL_STEP: Audit/generate a Mazovia regional vector tileset preserving highway, surface, tracktype and other off-road OSM attributes, then create Mazovia Offroad Style v1.
+NEXT_HIGH_LEVEL_STEP: Generate a small Mazovia/Siedlce-area custom PMTiles prototype using the approved schema and inspect its actual vector attributes.
 UPDATED_AT: 2026-09-18T21:45:28+02:00
