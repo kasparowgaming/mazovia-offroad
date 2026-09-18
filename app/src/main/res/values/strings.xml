@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">Mazovia Offroad</string>
+    <string name="tab_mapa">Mapa</string>
+    <string name="tab_trasy">Trasy</string>
+    <string name="tab_jazdy">Jazdy</string>
+    <string name="tab_wiecej">Więcej</string>
+</resources>

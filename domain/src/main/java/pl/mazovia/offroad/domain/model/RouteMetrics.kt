@@ -1,0 +1,119 @@
+package pl.mazovia.offroad.domain.model
+
+import kotlinx.serialization.Serializable
+
+/**
+ * Comprehensive route metrics focused on off-road quality.
+ * These are the primary metrics shown to the rider - NOT just distance/ETA.
+ */
+@Serializable
+data class RouteMetrics(
+    /** Total route distance in meters */
+    val totalDistanceMeters: Double,
+    /** Estimated time in seconds */
+    val estimatedTimeSeconds: Long,
+    /** Off-road distance in meters */
+    val asphaltDistanceMeters: Double,
+    val offRoadDistanceMeters: Double,
+    /** Longest continuous asphalt connector in meters */
+    val longestAsphaltConnectorMeters: Double,
+    /** Surface distribution as fraction of total distance */
+    val surfaceDistribution: Map<Surface, Double>,
+    /** Average data confidence across the route (0.0 - 1.0) */
+    val dataConfidenceScore: Double,
+    /** Fraction of route that retraces/overlaps (for loops) */
+    val retraceFraction: Double = 0.0,
+    /** Fraction of route on previously unridden roads */
+    val explorationScore: Double = 0.0,
+    /** Route continuity score - fewer breaks in off-road = better */
+    val continuitScore: Double = 0.0
+) {
+    /** Off-road as percentage of total distance */
+    val offRoadPercentage: Double
+        get() = if (totalDistanceMeters > 0) (offRoadDistanceMeters / totalDistanceMeters) * 100 else 0.0
+
+    /** Asphalt as percentage of total distance */
+    val asphaltPercentage: Double
+        get() = if (totalDistanceMeters > 0) (asphaltDistanceMeters / totalDistanceMeters) * 100 else 0.0
+
+    /** Data confidence as percentage */
+    val dataConfidencePercentage: Double
+        get() = dataConfidenceScore * 100
+
+    companion object {
+        val EMPTY = RouteMetrics(
+            totalDistanceMeters = 0.0,
+            estimatedTimeSeconds = 0,
+            offRoadDistanceMeters = 0.0,
+            asphaltDistanceMeters = 0.0,
+            longestAsphaltConnectorMeters = 0.0,
+            surfaceDistribution = emptyMap(),
+            dataConfidenceScore = 0.0
+        )
+
+        /**
+         * Calculate metrics from route segments.
+         */
+        fun fromSegments(segments: List<RouteSegment>): RouteMetrics {
+            if (segments.isEmpty()) return EMPTY
+
+            val totalDistance = segments.sumOf { it.distanceMeters }
+            val offRoadDistance = segments.filter { it.isOffRoad }.sumOf { it.distanceMeters }
+            val asphaltDistance = segments.filter { it.isAsphalt }.sumOf { it.distanceMeters }
+
+            // Calculate longest asphalt connector
+            var longestConnector = 0.0
+            var currentConnector = 0.0
+            for (segment in segments) {
+                if (segment.isAsphalt) {
+                    currentConnector += segment.distanceMeters
+                    longestConnector = maxOf(longestConnector, currentConnector)
+                } else {
+                    currentConnector = 0.0
+                }
+            }
+
+            // Surface distribution
+            val surfaceDist = segments.groupBy { it.surface }
+                .mapValues { (_, segs) -> segs.sumOf { it.distanceMeters } / totalDistance }
+
+            // Data confidence
+            val avgConfidence = if (segments.isNotEmpty()) {
+                segments.sumOf { it.dataConfidence.level.toDouble() * it.distanceMeters } /
+                        totalDistance / 3.0 // Normalize to 0-1 (max level is 3)
+            } else 0.0
+
+            // Continuity: count transitions from off-road to asphalt
+            var transitions = 0
+            for (i in 1 until segments.size) {
+                if (segments[i - 1].isOffRoad && segments[i].isAsphalt) transitions++
+            }
+            val continuity = if (segments.size > 1) 1.0 - (transitions.toDouble() / segments.size) else 1.0
+
+            // Estimated time: rough estimate based on surface
+            val estimatedTime = segments.sumOf { seg ->
+                val speedKmh = when {
+                    seg.surface == Surface.ASPHALT -> 60.0
+                    seg.surface == Surface.GRAVEL || seg.surface == Surface.COMPACTED -> 35.0
+                    seg.surface == Surface.DIRT || seg.surface == Surface.EARTH -> 25.0
+                    seg.surface == Surface.SAND || seg.surface == Surface.MUD -> 15.0
+                    seg.highway == HighwayType.TRACK -> 30.0
+                    seg.highway == HighwayType.PATH -> 20.0
+                    else -> 40.0
+                }
+                (seg.distanceMeters / 1000.0) / speedKmh * 3600.0
+            }.toLong()
+
+            return RouteMetrics(
+                totalDistanceMeters = totalDistance,
+                estimatedTimeSeconds = estimatedTime,
+                offRoadDistanceMeters = offRoadDistance,
+                asphaltDistanceMeters = asphaltDistance,
+                longestAsphaltConnectorMeters = longestConnector,
+                surfaceDistribution = surfaceDist,
+                dataConfidenceScore = avgConfidence,
+                continuitScore = continuity
+            )
+        }
+    }
+}

@@ -1,0 +1,4 @@
+-keep class com.graphhopper.** { *; }
+-dontwarn com.graphhopper.**
+-dontwarn org.xmlpull.**
+-dontwarn javax.xml.**
