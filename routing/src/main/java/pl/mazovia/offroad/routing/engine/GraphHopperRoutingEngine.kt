@@ -9,6 +9,7 @@ import com.graphhopper.util.Instruction
 import com.graphhopper.util.Parameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
 import pl.mazovia.offroad.domain.model.*
 import pl.mazovia.offroad.domain.routing.*
 import pl.mazovia.offroad.routing.profile.OffroadProfileConfig
@@ -220,6 +221,60 @@ class GraphHopperRoutingEngine : RoutingEngine {
     ): RoutingResult = withContext(Dispatchers.IO) {
         val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
 
+        // Base route calculation
+        val baselineResult = calculateSingleRoute(origin, destination, profile, waypoints)
+        
+        // If there are specific waypoints or if profile is BEZPIECZNY, just return the baseline
+        if (waypoints.isNotEmpty() || profile == RoutingProfile.BEZPIECZNY) {
+            return@withContext baselineResult
+        }
+
+        // We only proceed with geometric alternatives if baseline succeeds
+        val baselineRoute = (baselineResult as? RoutingResult.Success)?.route ?: return@withContext baselineResult
+
+        try {
+            val corridors = RouteTournament.profileDiversityCorridors(origin, destination, profile)
+            if (corridors.isEmpty()) {
+                return@withContext baselineResult
+            }
+
+            android.util.Log.e("GraphHopperDiagnostic", "Generating ${corridors.size} alternative corridors")
+            
+            // Calculate alternatives safely and in parallel
+            val candidateDeferreds = corridors.map { corridor ->
+                async { 
+                    try {
+                        val result = calculateSingleRoute(origin, destination, profile, corridor)
+                        (result as? RoutingResult.Success)?.route
+                    } catch (e: Exception) {
+                        null
+                    }
+                }
+            }
+
+            val candidates = candidateDeferreds.mapNotNull { it.await() } + baselineRoute
+            
+            android.util.Log.e("GraphHopperDiagnostic", "Tournament evaluating ${candidates.size} valid candidates")
+            val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile)
+
+            if (winner != null) {
+                return@withContext RoutingResult.Success(winner)
+            }
+            return@withContext baselineResult
+        } catch (e: Exception) {
+            android.util.Log.e("GraphHopperDiagnostic", "Tournament failed, falling back to baseline", e)
+            return@withContext baselineResult
+        }
+    }
+
+    private suspend fun calculateSingleRoute(
+        origin: GeoPoint,
+        destination: GeoPoint,
+        profile: RoutingProfile,
+        waypoints: List<GeoPoint>
+    ): RoutingResult = withContext(Dispatchers.IO) {
+        val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
+
         try {
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_CALCULATION_START")
             val profileName = profile.toGraphHopperProfile()
@@ -269,11 +324,11 @@ class GraphHopperRoutingEngine : RoutingEngine {
 
             RoutingResult.Success(route)
         } catch (e: OutOfMemoryError) {
-            android.util.Log.e("GraphHopperDiagnostic", "OOM in calculateRoute", e)
+            android.util.Log.e("GraphHopperDiagnostic", "OOM in calculateSingleRoute", e)
             lastError = "OOM: " + e.message
             RoutingResult.Error(RoutingError.MEMORY_ERROR)
         } catch (e: Exception) {
-            android.util.Log.e("GraphHopperDiagnostic", "FATAL EXCEPTION in calculateRoute", e)
+            android.util.Log.e("GraphHopperDiagnostic", "FATAL EXCEPTION in calculateSingleRoute", e)
             lastError = "Routing error: " + e.message
             RoutingResult.Error(RoutingError.CALCULATION_ERROR)
         }

@@ -23,6 +23,10 @@ data class RouteMetrics(
     val dataConfidenceScore: Double,
     /** Fraction of route that retraces/overlaps (for loops) */
     val retraceFraction: Double = 0.0,
+    /** Longest continuous off-road section in meters */
+    val longestContinuousTerrainMeters: Double = 0.0,
+    /** Number of distinct off-road sections separated by asphalt */
+    val terrainRunCount: Int = 0,
     /** Fraction of route on previously unridden roads */
     val explorationScore: Double = 0.0,
     /** Route continuity score - fewer breaks in off-road = better */
@@ -83,12 +87,26 @@ data class RouteMetrics(
                         totalDistance / 3.0 // Normalize to 0-1 (max level is 3)
             } else 0.0
 
-            // Continuity: count transitions from off-road to asphalt
-            var transitions = 0
-            for (i in 1 until segments.size) {
-                if (segments[i - 1].isOffRoad && segments[i].isAsphalt) transitions++
+            var longestContinuousTerrain = 0.0
+            var currentTerrainRun = 0.0
+            var terrainRuns = 0
+            var wasTerrain = false
+
+            for (segment in segments) {
+                if (segment.isOffRoad) {
+                    currentTerrainRun += segment.distanceMeters
+                    longestContinuousTerrain = maxOf(longestContinuousTerrain, currentTerrainRun)
+                    if (!wasTerrain) {
+                        terrainRuns++
+                        wasTerrain = true
+                    }
+                } else {
+                    wasTerrain = false
+                    currentTerrainRun = 0.0
+                }
             }
-            val continuity = if (segments.size > 1) 1.0 - (transitions.toDouble() / segments.size) else 1.0
+
+            val continuity = if (segments.size > 1) 1.0 - ((terrainRuns - 1).coerceAtLeast(0).toDouble() / segments.size) else 1.0
 
             // Estimated time: rough estimate based on surface
             val estimatedTime = segments.sumOf { seg ->
@@ -112,7 +130,9 @@ data class RouteMetrics(
                 longestAsphaltConnectorMeters = longestConnector,
                 surfaceDistribution = surfaceDist,
                 dataConfidenceScore = avgConfidence,
-                continuitScore = continuity
+                continuitScore = continuity,
+                longestContinuousTerrainMeters = longestContinuousTerrain,
+                terrainRunCount = terrainRuns
             )
         }
     }
