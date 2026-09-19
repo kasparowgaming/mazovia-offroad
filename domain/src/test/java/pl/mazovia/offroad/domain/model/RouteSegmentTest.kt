@@ -43,4 +43,18 @@ class RouteSegmentTest {
         assertFalse(segment.isOffRoad)
         assertTrue(segment.isAsphalt)
     }
+
+    @Test
+    fun `UNPAVED DIRT GRAVEL segment counts as terrain regardless of highway`() {
+        listOf(Surface.UNPAVED, Surface.DIRT, Surface.GRAVEL).forEach { surface ->
+            val segment = RouteSegment(
+                points = dummyPoints,
+                distanceMeters = 100.0,
+                surface = surface,
+                highway = HighwayType.PRIMARY // Even if highway is PRIMARY, surface overrides
+            )
+            assertTrue("Expected $surface to be off-road", segment.isOffRoad)
+            assertFalse("Expected $surface not to be asphalt", segment.isAsphalt)
+        }
+    }
 }

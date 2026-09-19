@@ -347,7 +347,7 @@ class GraphHopperRoutingEngine : RoutingEngine {
                 this.profile = profileName
                 this.locale = java.util.Locale("pl")
                 putHint(Parameters.Routing.INSTRUCTIONS, true)
-                putHint(Parameters.Details.PATH_DETAILS, listOf("surface", "road_class", "track_type"))
+                this.setPathDetails(listOf("surface", "road_class", "track_type"))
                 putHint("ch.disable", true)
             }
             android.util.Log.e("GraphHopperDiagnostic", "GHREQUEST_CREATED")
@@ -429,6 +429,7 @@ class GraphHopperRoutingEngine : RoutingEngine {
             ).apply {
                 this.profile = profileName
                 putHint(Parameters.Routing.INSTRUCTIONS, true)
+                this.setPathDetails(listOf("surface", "road_class", "track_type"))
                 setAlgorithm(Parameters.Algorithms.ALT_ROUTE)
                 putHint("alternative_route.max_paths", maxAlternatives)
                 putHint("alternative_route.max_share", 0.6)
@@ -562,10 +563,44 @@ class GraphHopperRoutingEngine : RoutingEngine {
         val segments = mutableListOf<RouteSegment>()
         val pathDetails = path.pathDetails
 
+        val isDiagnostic = path.distance > 0 && path.distance < 20000 && allPoints.size > 10 // roughly matching the diagnostic route
+        var shouldDiagnose = false
+
         // Try to get surface details from GraphHopper
         val surfaceDetails = pathDetails["surface"]
         val roadClassDetails = pathDetails["road_class"]
         val trackTypeDetails = pathDetails["track_type"]
+        
+        if (System.getProperty("MAZOVIA_DIAGNOSE_GH") == "true") {
+            shouldDiagnose = true
+            println("=== GH PATH DETAILS DUMP ===")
+            println("- contains surface: ${surfaceDetails != null}")
+            println("- contains road_class: ${roadClassDetails != null}")
+            println("- contains track_type: ${trackTypeDetails != null}")
+            
+            println("- surface ranges count: ${surfaceDetails?.size}")
+            println("- road_class ranges count: ${roadClassDetails?.size}")
+            println("- track_type ranges count: ${trackTypeDetails?.size}")
+            
+            println("- unique surface values: ${surfaceDetails?.map { it.value?.toString() }?.toSet()}")
+            println("- unique road_class values: ${roadClassDetails?.map { it.value?.toString() }?.toSet()}")
+            println("- unique track_type values: ${trackTypeDetails?.map { it.value?.toString() }?.toSet()}")
+            
+            println("\n- first 20 surface ranges:")
+            surfaceDetails?.take(20)?.forEach { 
+                println("  [${it.first}..${it.last}]: ${it.value}") 
+            }
+            
+            println("\n- first 20 road_class ranges:")
+            roadClassDetails?.take(20)?.forEach { 
+                println("  [${it.first}..${it.last}]: ${it.value}") 
+            }
+            
+            println("\n- first 20 track_type ranges:")
+            trackTypeDetails?.take(20)?.forEach { 
+                println("  [${it.first}..${it.last}]: ${it.value}") 
+            }
+        }
 
         if (surfaceDetails != null && surfaceDetails.isNotEmpty()) {
             for (detail in surfaceDetails) {
