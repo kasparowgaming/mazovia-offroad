@@ -11,3 +11,10 @@ Decision: Evaluate MapLibre Native as the preferred future map-rendering candida
 Reason: MapLibre Native offers GPU vector rendering, smoother native camera primitives, bearing/zoom/tilt animation, custom Style JSON, offline vector maps, and PMTiles feasibility, enabling greater control over off-road cartography.
 Affected areas: Map rendering, map UI components.
 Do not revisit unless: MapLibre Native POC proves unfeasible on target hardware.
+
+DECISION-003 - Offline MapLibre Vector Map Architecture
+Date: 2026-09-19
+Decision: Use MapLibre Native with offline PMTiles vector archives (asset:// or file://) and bundled offline glyph PBFs (asset://). No runtime network dependency is permitted for map rendering.
+Reason: Enduro riders frequently operate outside cellular coverage. Using local PMTiles and bundled local font glyphs guarantees total reliability without relying on map tiles or font PBFs from an online server.
+Affected areas: MapLibre style JSON, asset bundle, PMTiles architecture.
+Do not revisit unless: Vector tiles are abandoned entirely.

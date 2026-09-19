@@ -1,21 +1,23 @@
 # Current Engineering Task
 
-**Task:** Fix false GPS cancellation error and foreground recording notification lifecycle after ZAKOŃCZ.
+**Task:** Verify fully offline MapLibre glyph rendering for Mazovia Style v1.
 **Owner:** GEMINI
 **Status:** COMPLETED
 **Started:** 2026-09-19
 **Completed:** 2026-09-19
 
 ## Objective
-Prevent intentional ride cancellation from throwing a false GPS error in the foreground notification. Ensure `ZAKOŃCZ` gracefully stops the location coroutine, removes the notification, and stops the foreground service safely.
+Prove that Mazovia Offroad labels can render from LOCAL bundled glyph PBF files with ALL network connectivity disabled.
 
 ## Requirements
-- Propagate `CancellationException` properly; do not swallow real GPS failures.
-- Verify `stopForeground` and `stopSelf` are used correctly for the API level.
-- No modifications to GraphHopper, MapLibre, styling, or routing.
-
-## Physical Acceptance Test
-- **PASSED**: Verified on device that pressing `ZAKOŃCZ` cleanly stops recording and removes the foreground notification without throwing a false "BŁĄD GPS" exception. Subsequent rides start normally.
+- Target font: `Open Sans Semibold`
+- Required glyph ranges: Standard Latin (0-255) and Polish diacritics (256-511).
+- Preferred asset structure: `asset://map/glyphs/{fontstack}/{range}.pbf`
+- Do not modify GraphHopper, OSMDroid, or routing logic.
+- Do not keep `demotiles.maplibre.org` as a runtime dependency.
 
 ## Accomplished
-- Propagated `kotlinx.coroutines.CancellationException` properly in `TrackRecordingService.kt` to avoid catching intentional job cancellations as GPS errors.
+- Downloaded Latin (`0-255.pbf`) and Latin Extended (`256-511.pbf`) Mapbox GL font glyphs for `Open Sans Semibold`.
+- Bundled the glyphs into Android `assets/map/glyphs/Open Sans Semibold/`.
+- Updated `tools/tiles/generate_style.py` and `mazovia_offroad_v1.json` to use the offline `asset://map/glyphs/{fontstack}/{range}.pbf` path.
+- Verified on a physical device with network completely disabled that MapLibre successfully renders the map, place labels, road labels, and Polish diacritics flawlessly from local assets.

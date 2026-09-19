@@ -3,7 +3,7 @@ import json
 def build_style():
     style = {
         "version": 8,
-        "glyphs": "https://demotiles.maplibre.org/font/{fontstack}/{range}.pbf",
+        "glyphs": "asset://map/glyphs/{fontstack}/{range}.pbf",
         "sources": {
             "pmtiles_source": {
                 "type": "vector",
