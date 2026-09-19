@@ -1,13 +1,13 @@
 # Current Engineering Task
 
-**Task:** TASK-20260919-004
+**Task:** TASK-20260919-005
 **Owner:** GEMINI
 **Status:** COMPLETED
 **Started:** 2026-09-19
 **Completed:** 2026-09-19
 
 ## Objective
-Restore the complete working navigation flow (Map -> Routing -> Summary -> Riding) using the current project components and MapLibrePMTilesPOCContainer.
+Make RIDING mode operational as an actual motorcycle navigation experience.
 
 ## Active State
-Task successfully implemented. The destination selection, routing request, route result display, automatic route bounding box framing, and "Prowadz" navigation handoff to the RidingScreen all work correctly using MapLibre. All tests and debug builds passed.
+Task successfully implemented. NavigationManager was rewritten to use currentPointIndex on an active route points list, preventing GPS jumping and ensuring maneuvers progress linearly. RidingScreen bindings correctly display ETA, remaining distance, off-route, and arrival states. All tests and debug builds passed.
