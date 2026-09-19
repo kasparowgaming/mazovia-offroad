@@ -53,6 +53,9 @@ fun MapLibrePMTilesPOCContainer(
     val mapViewRef = remember { mutableStateOf<MapView?>(null) }
     val mapLibreMapRef = remember { mutableStateOf<MapLibreMap?>(null) }
     
+    var lastCenterRequest: Long? by remember { mutableStateOf(null) }
+    var lastCameraBearing: Double? by remember { mutableStateOf(null) }
+    
     // Explicit styleReady state to fix race conditions
     var styleReady by remember { mutableStateOf(false) }
 
@@ -224,15 +227,45 @@ fun MapLibrePMTilesPOCContainer(
         val mapLibreMap = mapLibreMapRef.value ?: return@LaunchedEffect
         
         if (isFollowMode && currentPosition != null) {
-            val cameraBuilder = CameraPosition.Builder()
-                .target(LatLng(currentPosition.latitude, currentPosition.longitude))
-                .zoom(16.0)
+            val centerChanged = lastCenterRequest != centerRequest
             
-            if (bearing != null) {
-                cameraBuilder.bearing(bearing.toDouble())
+            // Calculate angularDiff handling nulls and 0/360 wrap
+            var applyNewBearing = false
+            val incomingBearing = bearing
+            
+            if (incomingBearing != null) {
+                if (lastCameraBearing == null || centerChanged) {
+                    applyNewBearing = true
+                } else {
+                    val diff = kotlin.math.abs(incomingBearing - lastCameraBearing!!)
+                    val minDiff = kotlin.math.min(diff, 360.0 - diff)
+                    if (minDiff >= 3.0) {
+                        applyNewBearing = true
+                    }
+                }
             }
+
+            val builder = CameraPosition.Builder()
+                .target(LatLng(currentPosition.latitude, currentPosition.longitude))
+                
+            // Zoom logic: Zoom 16.0 only when centerRequest changes.
+            if (centerChanged) {
+                builder.zoom(16.0)
+            } else {
+                builder.zoom(mapLibreMap.cameraPosition.zoom)
+            }
+
+            // Bearing logic
+            if (applyNewBearing && incomingBearing != null) {
+                builder.bearing(incomingBearing)
+                lastCameraBearing = incomingBearing
+            } else if (lastCameraBearing != null) {
+                builder.bearing(lastCameraBearing!!)
+            }
+
+            mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 1000)
             
-            mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraBuilder.build()), 1000)
+            lastCenterRequest = centerRequest
         }
     }
 

@@ -30,6 +30,8 @@ class NavigationManager(
     private var currentSegmentIndex = 0
     private var locationJob: Job? = null
     private val scope = CoroutineScope(Dispatchers.Default)
+    private var lastAcceptedPosition: GeoPoint? = null
+    private var lastAcceptedBearing: Double? = null
 
     init {
         locationJob = scope.launch {
@@ -131,23 +133,51 @@ class NavigationManager(
         if (currentState.status == NavigationStatus.IDLE ||
             currentState.status == NavigationStatus.ARRIVED) return
 
+        // Speed zero threshold
+        var effectiveSpeed = speedMps?.coerceAtLeast(0.0) ?: 0.0
+        if (effectiveSpeed < 1.5) {
+            effectiveSpeed = 0.0
+        }
+
+        // Position deadband - use last accepted position if within 3.0 meters
+        var effectivePosition = position
+        var effectiveBearing = bearing
+        if (lastAcceptedPosition != null) {
+            val distance = position.distanceTo(lastAcceptedPosition!!)
+            if (distance < 3.0) {
+                effectivePosition = lastAcceptedPosition!!
+            } else {
+                lastAcceptedPosition = position
+            }
+        } else {
+            lastAcceptedPosition = position
+        }
+
+        // Bearing low-speed guard - don't update bearing if speed < 2.0 mps or null
+        if (speedMps == null || speedMps < 2.0) {
+            effectiveBearing = lastAcceptedBearing
+        } else {
+            effectiveBearing = bearing
+            lastAcceptedBearing = bearing
+        }
+
         // Update segment index
-        currentSegmentIndex = findNearestSegmentIndex(position, route)
+        currentSegmentIndex = findNearestSegmentIndex(effectivePosition, route)
 
         // Check off-route
         val routePoints = route.allPoints
-        val offRouteState = offRouteDetector.checkPosition(position, routePoints)
+        val offRouteState = offRouteDetector.checkPosition(effectivePosition, routePoints)
 
         // Find next maneuver
-        val nextManeuver = findNextManeuver(position, route)
-        val distToManeuver = nextManeuver?.let { position.distanceTo(it.point) }
+        val nextManeuver = findNextManeuver(effectivePosition, route)
+        val distToManeuver = nextManeuver?.let { effectivePosition.distanceTo(it.point) }
 
         // Calculate remaining
         val remaining = calculateRemainingDistance(route, currentSegmentIndex)
         val remainingTime = calculateRemainingTime(route, currentSegmentIndex)
 
         // Check if arrived
-        val distToDestination = position.distanceTo(route.destination)
+        val distToDestination = effectivePosition.distanceTo(route.destination)
 
         val newStatus = when {
             distToDestination < 50.0 -> NavigationStatus.ARRIVED
@@ -162,9 +192,9 @@ class NavigationManager(
         _navigationState.value = NavigationState(
             status = newStatus,
             route = route,
-            currentPosition = position,
-            currentBearing = bearing,
-            currentSpeedMps = speedMps,
+            currentPosition = effectivePosition,
+            currentBearing = effectiveBearing,
+            currentSpeedMps = effectiveSpeed,
             nextManeuver = nextManeuver,
             distanceToNextManeuverMeters = distToManeuver,
             remainingDistanceMeters = remaining,
