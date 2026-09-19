@@ -66,6 +66,9 @@ fun MapLibrePMTilesPOCContainer(
     val gpsSourceId = "gps-source"
     val gpsLayerId = "gps-layer"
     
+    val destSourceId = "dest-source"
+    val destLayerId = "dest-layer"
+    
     val pmtilesFile = java.io.File(context.getExternalFilesDir(null), "mazowieckie_offroad.pmtiles")
     val fileExists = pmtilesFile.exists()
     
@@ -159,6 +162,17 @@ fun MapLibrePMTilesPOCContainer(
                         }
                         style.addLayerAbove(gpsLayer, routeCoreLayerId)
                         
+                        style.addSource(GeoJsonSource(destSourceId))
+                        val destLayer = CircleLayer(destLayerId, destSourceId).apply {
+                            setProperties(
+                                circleColor(android.graphics.Color.parseColor("#FF1744")),
+                                circleRadius(10f),
+                                circleStrokeColor(android.graphics.Color.WHITE),
+                                circleStrokeWidth(2f)
+                            )
+                        }
+                        style.addLayerAbove(destLayer, routeCoreLayerId)
+                        
                         Log.d(TAG, "STYLE_READY=true")
                         styleReady = true
                     }
@@ -209,6 +223,15 @@ fun MapLibrePMTilesPOCContainer(
                         Log.d(TAG, "CURRENT_POSITION_APPLIED")
                     } else {
                         gpsSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+                    }
+                }
+                
+                val destSource = style.getSource(destSourceId) as? GeoJsonSource
+                if (destSource != null) {
+                    if (destination != null) {
+                        destSource.setGeoJson(Feature.fromGeometry(Point.fromLngLat(destination.longitude, destination.latitude)))
+                    } else {
+                        destSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
                     }
                 }
             }
@@ -266,6 +289,24 @@ fun MapLibrePMTilesPOCContainer(
             mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 1000)
             
             lastCenterRequest = centerRequest
+        } else if (!isFollowMode && currentPosition != null && lastCenterRequest != centerRequest) {
+            mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(currentPosition.latitude, currentPosition.longitude), 16.0), 1000)
+            lastCenterRequest = centerRequest
+        }
+    }
+
+    LaunchedEffect(routePoints, styleReady) {
+        if (!styleReady || routePoints.isEmpty() || isFollowMode) return@LaunchedEffect
+        val mapLibreMap = mapLibreMapRef.value ?: return@LaunchedEffect
+        
+        if (routePoints.size > 1) {
+            val builder = org.maplibre.android.geometry.LatLngBounds.Builder()
+            routePoints.forEach { builder.include(LatLng(it.latitude, it.longitude)) }
+            try {
+                mapLibreMap.easeCamera(CameraUpdateFactory.newLatLngBounds(builder.build(), 150), 1000)
+            } catch (e: Exception) {
+                // Ignore if bounds are too small or invalid
+            }
         }
     }
 

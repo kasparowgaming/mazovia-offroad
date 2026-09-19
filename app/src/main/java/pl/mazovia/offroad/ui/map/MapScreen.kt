@@ -60,7 +60,7 @@ fun MapScreen(
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Map fills the entire screen
-        MapViewContainer(
+        pl.mazovia.offroad.ui.map.components.MapLibrePMTilesPOCContainer(
             currentPosition = uiState.currentPosition,
             destination = uiState.destination,
             routePoints = uiState.routePoints,
