@@ -128,7 +128,7 @@ fun MapLibrePMTilesPOCContainer(
                         val casingLayer = LineLayer(routeCasingLayerId, routeSourceId).apply {
                             setProperties(
                                 lineColor(android.graphics.Color.parseColor("#0D47A1")),
-                                lineWidth(12f),
+                                lineWidth(9.5f),
                                 lineCap(org.maplibre.android.style.layers.Property.LINE_CAP_ROUND),
                                 lineJoin(org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND)
                             )
@@ -138,7 +138,7 @@ fun MapLibrePMTilesPOCContainer(
                         val coreLayer = LineLayer(routeCoreLayerId, routeSourceId).apply {
                             setProperties(
                                 lineColor(android.graphics.Color.parseColor("#00BFFF")),
-                                lineWidth(6f),
+                                lineWidth(4.5f),
                                 lineCap(org.maplibre.android.style.layers.Property.LINE_CAP_ROUND),
                                 lineJoin(org.maplibre.android.style.layers.Property.LINE_JOIN_ROUND)
                             )

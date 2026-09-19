@@ -3,6 +3,7 @@ import json
 def build_style():
     style = {
         "version": 8,
+        "name": "Mazovia Offroad v1.1",
         "glyphs": "asset://map/glyphs/{fontstack}/{range}.pbf",
         "sources": {
             "pmtiles_source": {
@@ -23,140 +24,195 @@ def build_style():
         if maxzoom is not None: l["maxzoom"] = maxzoom
         style["layers"].append(l)
 
-    # Background
+    # 1. Background
     style["layers"].append({
         "id": "background",
         "type": "background",
         "paint": {"background-color": "#18181A"}
     })
 
-    # Landcover
+    # 2. Landcover (Level 5)
     layer("landcover-sand", "fill", "landcover", ["==", "class", "sand"], 
-          {"fill-color": "#2C2618"})
+          {"fill-color": "#2A251A", "fill-opacity": 0.8})
     layer("landcover-forest", "fill", "landcover", ["==", "class", "forest"], 
-          {"fill-color": "#1B261D"})
+          {"fill-color": "#19241B", "fill-opacity": 0.8})
 
     # Water
-    layer("water", "fill", "water", None, {"fill-color": "#1F3E4D"})
-    layer("waterway", "line", "waterway", None, {"line-color": "#1F3E4D", "line-width": 2})
+    layer("water", "fill", "water", None, {"fill-color": "#1B4352"})
+    layer("waterway", "line", "waterway", None, {"line-color": "#1B4352", "line-width": 2})
 
     # Buildings
-    layer("building", "fill", "building", None, {"fill-color": "#222224", "fill-opacity": 0.6})
+    layer("building", "fill", "building", None, {"fill-color": "#2A2A2E", "fill-opacity": 0.5}, minzoom=13)
 
-    # Transportation Base (Paved/Urban Roads - Subdued)
-    road_paint = {
-        "line-color": "#333336",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 4, 18, 12]
-    }
-    road_casing = {
-        "line-color": "#111111",
-        "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 15, 6, 18, 16]
-    }
 
-    # Major roads
+    # 3. Transportation (Level 3 & 4)
+    # Major Roads (motorway, trunk, primary)
     layer("road-major-casing", "line", "transportation", 
           ["match", ["get", "highway"], ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link"], True, False],
-          road_casing)
+          {"line-color": "#0B0B0C", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 2, 15, 6, 18, 14]},
+          layout={"line-cap": "round", "line-join": "round"})
+          
     layer("road-major", "line", "transportation", 
           ["match", ["get", "highway"], ["motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link"], True, False],
-          {"line-color": "#4A4A4F", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1.5, 15, 5, 18, 14]})
+          {"line-color": "#38383B", "line-width": ["interpolate", ["linear"], ["zoom"], 10, 1, 15, 4, 18, 10]},
+          layout={"line-cap": "round", "line-join": "round"})
 
-    # Minor roads
-    layer("road-minor-casing", "line", "transportation", 
-          ["match", ["get", "highway"], ["secondary", "tertiary", "unclassified", "residential"], True, False],
-          {"line-color": "#18181A", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 15, 4, 18, 10]}, minzoom=9)
-    layer("road-minor", "line", "transportation", 
-          ["match", ["get", "highway"], ["secondary", "tertiary", "unclassified", "residential"], True, False],
-          {"line-color": "#3A3A3D", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 15, 3, 18, 8]}, minzoom=9)
+    # Secondary Roads (secondary, tertiary)
+    layer("road-secondary-casing", "line", "transportation", 
+          ["match", ["get", "highway"], ["secondary", "secondary_link", "tertiary", "tertiary_link"], True, False],
+          {"line-color": "#0F0F11", "line-width": ["interpolate", ["linear"], ["zoom"], 11, 1.5, 15, 5, 18, 12]}, minzoom=9,
+          layout={"line-cap": "round", "line-join": "round"})
           
-    # Service / Footway (very subdued)
-    layer("road-service", "line", "transportation", 
-          ["match", ["get", "highway"], ["service", "footway", "cycleway", "steps"], True, False],
-          {"line-color": "#2A2A2C", "line-width": ["interpolate", ["linear"], ["zoom"], 14, 1, 18, 4]}, minzoom=13)
+    layer("road-secondary", "line", "transportation", 
+          ["match", ["get", "highway"], ["secondary", "secondary_link", "tertiary", "tertiary_link"], True, False],
+          {"line-color": "#444449", "line-width": ["interpolate", ["linear"], ["zoom"], 11, 0.5, 15, 3, 18, 8]}, minzoom=9,
+          layout={"line-cap": "round", "line-join": "round"})
 
-    # ENDURO TRACKS
-    # Surface color mapping
+    # Local Roads (unclassified, residential, living_street)
+    layer("road-local-casing", "line", "transportation", 
+          ["match", ["get", "highway"], ["unclassified", "residential", "living_street", "road"], True, False],
+          {"line-color": "#111114", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1, 15, 3, 18, 8]}, minzoom=11,
+          layout={"line-cap": "round", "line-join": "round"})
+          
+    layer("road-local", "line", "transportation", 
+          ["match", ["get", "highway"], ["unclassified", "residential", "living_street", "road"], True, False],
+          {"line-color": "#303033", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 15, 1.5, 18, 5]}, minzoom=11,
+          layout={"line-cap": "round", "line-join": "round"})
+          
+    # Service / Pedestrian
+    layer("road-service", "line", "transportation", 
+          ["match", ["get", "highway"], ["service", "footway", "cycleway", "steps", "pedestrian"], True, False],
+          {"line-color": "#252528", "line-width": ["interpolate", ["linear"], ["zoom"], 13, 0.5, 18, 3]}, minzoom=13)
+
+
+    # 4. Off-Road Rideable Network (Level 2)
+    # Surface Color Palette
     surface_color = [
         "match",
         ["get", "surface"],
-        ["sand"], "#E6C975",
-        ["gravel"], "#D99B41",
-        ["compacted", "fine_gravel"], "#B08D5C",
-        ["dirt", "earth", "ground"], "#A3623B",
-        ["mud"], "#664B38",
-        ["grass"], "#5C8A47",
-        ["asphalt", "paved", "concrete", "concrete:plates", "concrete:lanes", "paving_stones", "sett", "cobblestone", "brick"], "#636366",
-        "#999999" # Fallback color for unknown surface
+        ["asphalt", "paved"], "#424244",
+        ["concrete", "concrete:plates", "concrete:lanes"], "#535355",
+        ["paving_stones", "sett", "cobblestone", "brick", "bricks"], "#4B4B42",
+        ["compacted", "fine_gravel"], "#856D4D",
+        ["gravel"], "#9C703B",
+        ["dirt", "earth", "ground", "unpaved"], "#7D4E2F",
+        ["sand"], "#B89E54",
+        ["mud"], "#4D3624",
+        ["grass"], "#4A6B3A",
+        "#6B5D53" # UNKNOWN (Highly visible brownish-grey)
     ]
 
-    # Tracktypes
+    # Tracktypes mapped to (dasharray, [width_z10, width_z13, width_z16, width_z18])
     track_types = [
-        ("grade1", None, [0.5, 1.5, 4, 12]), # [zoom10, zoom12, zoom15, zoom18] widths
-        ("grade2", None, [0.5, 1.2, 3, 10]),
-        ("grade3", [4, 1.5], [0.5, 1, 2.5, 8]),
-        ("grade4", [3, 2], [0.5, 1, 2, 6]),
-        ("grade5", [2, 3], [0.5, 0.8, 1.5, 5]),
-        ("unknown", [1, 1], [0.5, 1, 2, 6])
+        ("grade1", None, [0.5, 2.0, 5.0, 10.0]),
+        ("grade2", None, [0.5, 1.5, 4.0, 8.0]),
+        ("grade3", [3, 1.5], [0.5, 1.5, 3.5, 7.0]),
+        ("grade4", [2, 2], [0.5, 1.0, 3.0, 6.0]),
+        ("grade5", [1.5, 2.5], [0.5, 1.0, 2.5, 5.0]),
+        ("unknown", [2, 1], [0.5, 1.5, 3.5, 7.0])
     ]
 
+    # Render Tracks
     for grade, dash, widths in track_types:
         if grade == "unknown":
             flt = ["all", 
-                ["match", ["get", "highway"], ["track", "path", "bridleway"], True, False],
+                ["==", ["get", "highway"], "track"],
                 ["!", ["has", "tracktype"]]
             ]
         else:
             flt = ["all", 
-                ["match", ["get", "highway"], ["track"], True, False],
+                ["==", ["get", "highway"], "track"],
                 ["==", ["get", "tracktype"], grade]
             ]
             
+        # Track Casing (Dark outline for visibility)
+        layer(f"track-{grade}-casing", "line", "transportation", flt, {
+            "line-color": "#0B0B0C",
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, widths[0]+1, 13, widths[1]+1.5, 16, widths[2]+2, 18, widths[3]+3]
+        }, layout={"line-cap": "round", "line-join": "round"})
+        
+        # Track Core
         paint = {
             "line-color": surface_color,
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, widths[0], 12, widths[1], 15, widths[2], 18, widths[3]]
+            "line-width": ["interpolate", ["linear"], ["zoom"], 10, widths[0], 13, widths[1], 16, widths[2], 18, widths[3]]
         }
         if dash:
             paint["line-dasharray"] = dash
             
-        layer(f"track-{grade}-casing", "line", "transportation", flt, {
-            "line-color": "#111111",
-            "line-width": ["interpolate", ["linear"], ["zoom"], 10, widths[0]+1, 12, widths[1]+1, 15, widths[2]+2, 18, widths[3]+4]
-        }, layout={"line-cap": "round", "line-join": "round"})
-        
         layer(f"track-{grade}", "line", "transportation", flt, paint, layout={"line-cap": "round", "line-join": "round"})
 
-    # Restrictions Casing
-    layer("restriction-casing", "line", "transportation", 
+    # Render Paths/Bridleways
+    # Thinner and always dashed to distinguish from tracks
+    path_flt = ["match", ["get", "highway"], ["path", "bridleway"], True, False]
+    layer("path-casing", "line", "transportation", path_flt, {
+        "line-color": "#0B0B0C",
+        "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.5, 16, 3.5, 18, 6.0]
+    }, layout={"line-cap": "round", "line-join": "round"}, minzoom=11)
+    
+    layer("path-core", "line", "transportation", path_flt, {
+        "line-color": surface_color,
+        "line-width": ["interpolate", ["linear"], ["zoom"], 12, 0.5, 16, 2.0, 18, 4.0],
+        "line-dasharray": [2, 2]
+    }, layout={"line-cap": "round", "line-join": "round"}, minzoom=11)
+
+
+    # 5. Access Restrictions & Fords
+    # Restrictions (subtle red dashed overlay)
+    layer("restriction-overlay", "line", "transportation", 
           ["any", 
             ["==", ["get", "access"], "no"], 
             ["==", ["get", "access"], "private"],
             ["==", ["get", "motor_vehicle"], "no"],
             ["==", ["get", "motorcycle"], "no"]
           ],
-          {"line-color": "#FF3B30", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2, 15, 6, 18, 12], "line-opacity": 0.4},
+          {
+              "line-color": "#B33A3A", 
+              "line-width": ["interpolate", ["linear"], ["zoom"], 12, 1.5, 15, 3, 18, 6], 
+              "line-opacity": 0.6,
+              "line-dasharray": [1, 1]
+          },
           minzoom=12)
 
-    # Fords
-    layer("ford-casing", "line", "transportation", 
+    # Fords (cyan overlay to catch the eye for water crossings)
+    layer("ford-overlay", "line", "transportation", 
           ["has", "ford"],
-          {"line-color": "#00E5FF", "line-width": ["interpolate", ["linear"], ["zoom"], 12, 4, 15, 8, 18, 16], "line-opacity": 0.6},
+          {
+              "line-color": "#00BCD4", 
+              "line-width": ["interpolate", ["linear"], ["zoom"], 12, 2, 15, 5, 18, 10], 
+              "line-opacity": 0.7
+          },
           minzoom=12)
 
-    # Labels
+    # 6. Labels (Level 6)
+    # Sparse hierarchy
     layer("label-city", "symbol", "place", ["==", ["get", "class"], "city"], 
-          paint={"text-color": "#FFFFFF", "text-halo-color": "#000000", "text-halo-width": 2},
+          paint={"text-color": "#FFFFFF", "text-halo-color": "#111111", "text-halo-width": 2},
           layout={"text-field": ["get", "name"], "text-size": ["interpolate", ["linear"], ["zoom"], 6, 12, 10, 18], "text-font": ["Open Sans Semibold"]},
           minzoom=6, maxzoom=14)
           
     layer("label-town", "symbol", "place", ["==", ["get", "class"], "town"], 
-          paint={"text-color": "#DDDDDD", "text-halo-color": "#000000", "text-halo-width": 1.5},
-          layout={"text-field": ["get", "name"], "text-size": ["interpolate", ["linear"], ["zoom"], 8, 10, 14, 16], "text-font": ["Open Sans Semibold"]},
+          paint={"text-color": "#E0E0E0", "text-halo-color": "#111111", "text-halo-width": 1.5},
+          layout={"text-field": ["get", "name"], "text-size": ["interpolate", ["linear"], ["zoom"], 8, 11, 14, 16], "text-font": ["Open Sans Semibold"]},
           minzoom=8, maxzoom=15)
           
     layer("label-village", "symbol", "place", ["==", ["get", "class"], "village"], 
-          paint={"text-color": "#AAAAAA", "text-halo-color": "#000000", "text-halo-width": 1},
+          paint={"text-color": "#BBBBBB", "text-halo-color": "#111111", "text-halo-width": 1.5},
           layout={"text-field": ["get", "name"], "text-size": ["interpolate", ["linear"], ["zoom"], 10, 10, 15, 14], "text-font": ["Open Sans Semibold"]},
           minzoom=10)
+
+    # Road Names (Highly filtered to avoid clutter, only visible when zoomed in)
+    layer("label-road", "symbol", "transportation", 
+          ["all", ["has", "name"], ["match", ["get", "highway"], ["track", "path", "residential", "unclassified", "tertiary", "secondary"], True, False]],
+          paint={"text-color": "#999999", "text-halo-color": "#18181A", "text-halo-width": 1.5},
+          layout={
+              "text-field": ["get", "name"], 
+              "text-size": ["interpolate", ["linear"], ["zoom"], 14, 10, 18, 13], 
+              "text-font": ["Open Sans Semibold"],
+              "symbol-placement": "line",
+              "text-max-angle": 30,
+              "text-letter-spacing": 0.1
+          },
+          minzoom=14)
 
     # Output
     with open("app/src/main/assets/mapstyles/mazovia_offroad_v1.json", "w", encoding="utf-8") as f:
