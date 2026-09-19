@@ -185,6 +185,8 @@ class TrackRecordingService : LifecycleService() {
                         updateNotification("NAGRYWANIE ${elapsed / 60}min")
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
                 // Handle permission or disabled GPS errors
                 updateNotification("BŁĄD GPS: ${e.message}")

@@ -1,21 +1,21 @@
 # Current Engineering Task
 
-**Task:** Phase C1/C2 - Mazovia Offroad Regional PMTiles & Style v1
+**Task:** Fix false GPS cancellation error and foreground recording notification lifecycle after ZAKOŃCZ.
 **Owner:** GEMINI
 **Status:** COMPLETED
-**Started:** 2026-09-18
+**Started:** 2026-09-19
 **Completed:** 2026-09-19
 
 ## Objective
-Generate the full regional `mazowieckie_offroad.pmtiles` and implement `mazovia_offroad_v1.json` for MapLibre Native, ensuring offline rendering with enduro-specific tracktype and surface mapping.
+Prevent intentional ride cancellation from throwing a false GPS error in the foreground notification. Ensure `ZAKOŃCZ` gracefully stops the location coroutine, removes the notification, and stops the foreground service safely.
+
+## Requirements
+- Propagate `CancellationException` properly; do not swallow real GPS failures.
+- Verify `stopForeground` and `stopSelf` are used correctly for the API level.
+- No modifications to GraphHopper, MapLibre, styling, or routing.
+
+## Physical Acceptance Test
+- **PASSED**: Verified on device that pressing `ZAKOŃCZ` cleanly stops recording and removes the foreground notification without throwing a false "BŁĄD GPS" exception. Subsequent rides start normally.
 
 ## Accomplished
-- Generated full regional PMTiles archive (264MB) using Tilemaker in WSL.
-- Built Python generator `tools/tiles/generate_style.py` for dynamic Style v1 creation.
-- Successfully verified PMTiles coverage and geometric data via MVT decoding scripts.
-- Diagnosed and fixed MapLibre blank-tile rendering bug (caused by missing `Open Sans Bold` glyphs on demotiles server; changed to `Open Sans Semibold`).
-- Re-enabled GPS camera follow for POC container.
-- MapLibre successfully renders continuous regional data with the new Style v1 on the physical device.
-
-## Next High-Level Step
-Foreground recording notification cancellation bug.
+- Propagated `kotlinx.coroutines.CancellationException` properly in `TrackRecordingService.kt` to avoid catching intentional job cancellations as GPS errors.
