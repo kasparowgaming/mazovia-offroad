@@ -154,6 +154,7 @@ private fun PortraitRidingLayout(
         RidingStatusPills(
             hasGpsFix = navState.currentPosition != null,
             isRecording = recordingSession != null,
+            navStatus = navState.status,
             modifier = Modifier.padding(bottom = 8.dp)
         )
 

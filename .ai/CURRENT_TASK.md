@@ -1,14 +1,13 @@
 # Current Engineering Task
 
-**Task:** Await next assignment
+**Task:** TASK-20260919-004
 **Owner:** GEMINI
-**Status:** IDLE
-**Started:** 
-**Completed:** 
+**Status:** COMPLETED
+**Started:** 2026-09-19
+**Completed:** 2026-09-19
 
 ## Objective
-Task TASK-20260919-003 is verified and closed. Waiting for the next goal.
+Restore the complete working navigation flow (Map -> Routing -> Summary -> Riding) using the current project components and MapLibrePMTilesPOCContainer.
 
 ## Active State
-Repository is clean.
-Head is at `87c0235bbdaadb137f063c34f7a3e3b6bac99ee2`.
+Task successfully implemented. The destination selection, routing request, route result display, automatic route bounding box framing, and "Prowadz" navigation handoff to the RidingScreen all work correctly using MapLibre. All tests and debug builds passed.

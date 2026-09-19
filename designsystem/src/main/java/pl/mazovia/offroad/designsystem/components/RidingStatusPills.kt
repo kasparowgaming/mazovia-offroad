@@ -24,6 +24,7 @@ import java.time.format.DateTimeFormatter
 fun RidingStatusPills(
     hasGpsFix: Boolean,
     isRecording: Boolean,
+    navStatus: pl.mazovia.offroad.domain.model.NavigationStatus = pl.mazovia.offroad.domain.model.NavigationStatus.ON_ROUTE,
     modifier: Modifier = Modifier
 ) {
     var currentTime by remember { mutableStateOf(LocalTime.now()) }
@@ -59,6 +60,25 @@ fun RidingStatusPills(
                     dotColor = MazoviaColors.StatusRecRed,
                     textColor = MazoviaColors.StatusRecRed
                 )
+            }
+
+            // Nav Status Pills
+            when (navStatus) {
+                pl.mazovia.offroad.domain.model.NavigationStatus.OFF_ROUTE -> {
+                    StatusPill(
+                        text = "OFF ROUTE",
+                        dotColor = MazoviaColors.StatusRecRed,
+                        textColor = MazoviaColors.StatusRecRed
+                    )
+                }
+                pl.mazovia.offroad.domain.model.NavigationStatus.ARRIVED -> {
+                    StatusPill(
+                        text = "ARRIVED",
+                        dotColor = MazoviaColors.StatusGpsGreen,
+                        textColor = MazoviaColors.StatusGpsGreen
+                    )
+                }
+                else -> {}
             }
         }
 
