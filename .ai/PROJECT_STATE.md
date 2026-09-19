@@ -6,9 +6,15 @@ CURRENT_BLOCKER: NONE
 
 ACTIVE_AGENT: NONE
 ACTIVE_TASK_ID: NONE
-LOCAL_TASK_STATUS: IDLE
+LOCAL_TASK_STATUS: DONE
 
-LAST_ACCEPTED_LOCAL_COMMIT: 901be848ede70f5b769ff32a84cbeca86b3f2ab1
-PILOT_ACCEPTED_COUNT: 6
-NEXT_HIGH_LEVEL_STEP: Mazovia Offroad Style v1.1 readability and cartographic hierarchy pass.
-UPDATED_AT: 2026-09-19T10:48:00+02:00
+LAST_ACCEPTED_LOCAL_COMMIT: 87c0235bbdaadb137f063c34f7a3e3b6bac99ee2
+PILOT_ACCEPTED_COUNT: 8
+NEXT_HIGH_LEVEL_STEP: Await next task assignment
+UPDATED_AT: 2026-09-19T14:46:00+02:00
+
+EXECUTION_POLICY:
+- Gemini/Antigravity is the primary IMPLEMENTER.
+- Qwen/OpenCode is OPTIONAL, not mandatory.
+- Delegate to Qwen only for small, mechanical tasks (1-2 files) with low architectural risk.
+- Gemini should directly implement architecture changes, navigation/routing, MapLibre behavior, multi-module changes, integration bugs, and complex state management.

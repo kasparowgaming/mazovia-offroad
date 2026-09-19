@@ -1,47 +1,87 @@
-TASK_ID: NONE
+TASK_ID: TASK-20260919-003
 TASK_TYPE: IMPLEMENTATION
-STATUS: IDLE
-CREATED_BY: NONE
-CREATED_AT: NONE
+STATUS: DONE
+EXPECTED_BRANCH: main
+BASE_COMMIT: 709eef4815a84fb987278e3383fbc34ea549cb19
 
-BASE_COMMIT: NONE
-EXPECTED_BRANCH: NONE
+# Local Agent Task
+# OWNER: QWEN
 
-OBJECTIVE: NONE
+## Objective
+Fix the defective GPS and Camera stability implementation in `MapLibrePMTilesPOCContainer.kt`. `NavigationManager.kt` is currently acceptable.
 
-CONTEXT: NONE
+## Allowed Files
+- `app/src/main/java/pl/mazovia/offroad/ui/map/components/MapLibrePMTilesPOCContainer.kt`
 
-CONTEXT_FILES_REQUIRED:
-- none
+**FORBIDDEN**: Do NOT modify any other files.
 
-FILES_ALLOWED:
-- none
+## CRITICAL CORRECTIONS REQUIRED IN MapLibrePMTilesPOCContainer.kt
 
-FILES_FORBIDDEN:
-- all files not explicitly listed in FILES_ALLOWED
+1. **MapLibre Must Follow Every Accepted Position:**
+   There is NO need for a 3.0m deadband on the camera center in MapLibre. `NavigationManager` already filters out position jitter.
+   MapLibre MUST update its camera target to `currentPosition` on EVERY invocation where `isFollowMode && currentPosition != null`.
+   Currently, you wrapped the camera animation in `if (centerChanged || (angularDiff >= 3.0))`. This breaks the map! If the user drives straight (bearing doesn't change > 3°), the map stops following.
+   **Fix:** Remove the condition that restricts the main camera animation. It should always fire in follow mode.
 
-MAX_FILES_CHANGED: 5
-MAX_STEPS_PER_SESSION: 10
+2. **Fix Duplicate Camera Animations:**
+   You call `mapLibreMap.animateCamera(CameraUpdateFactory.zoomTo(16.0), 1000)` and then immediately call `animateCamera` again with a `CameraPosition.Builder`. This causes an animation race condition.
+   **Fix:** Combine them into ONE camera animation call. Build ONE `CameraPosition` using the builder. If `centerChanged` is true, use `.zoom(16.0)` on the builder. Otherwise, omit `.zoom()` from the builder, or use `.zoom(mapLibreMap.cameraPosition.zoom)`. Call `animateCamera` exactly ONCE.
 
-REQUIRED_BEHAVIOR: NONE
+3. **Messy Types (`centerRequest`):**
+   `centerRequest` is a `Long`. Do not convert it to `Double`. Use `var lastCenterRequest by remember { mutableStateOf<Long?>(null) }`.
 
-ACCEPTANCE_CRITERIA:
-1. NONE
+4. **Independent Bearing Deadband:**
+   Bearing has its own independent >= 3 degree deadband.
+   Only apply `.bearing()` to the camera builder if:
+   - `centerRequest` changed, OR
+   - the difference between the incoming `bearing` and `lastCameraBearing` is >= 3.0 degrees (handling 0/360 wrap correctly).
+   `lastCameraBearing` updates ONLY when bearing is actually applied.
 
-TEST_COMMANDS:
-1. NONE
+## Expected Camera Logic Structure (Inside LaunchedEffect):
+```kotlin
+if (isFollowMode && currentPosition != null) {
+    val centerChanged = lastCenterRequest != centerRequest
+    
+    // Calculate angularDiff handling nulls and 0/360 wrap
+    var applyNewBearing = false
+    val incomingBearing = bearing?.toDouble()
+    
+    if (incomingBearing != null) {
+        if (lastCameraBearing == null || centerChanged) {
+            applyNewBearing = true
+        } else {
+            val diff = kotlin.math.abs(incomingBearing - lastCameraBearing!!)
+            val minDiff = kotlin.math.min(diff, 360.0 - diff)
+            if (minDiff >= 3.0) {
+                applyNewBearing = true
+            }
+        }
+    }
 
-PRE_EXISTING_CHANGES:
-- path: none
-  diff_stat: none
+    val builder = CameraPosition.Builder()
+        .target(LatLng(currentPosition.latitude, currentPosition.longitude))
+        
+    // Zoom logic
+    if (centerChanged) {
+        builder.zoom(16.0)
+    } else {
+        builder.zoom(mapLibreMap.cameraPosition.zoom)
+    }
 
-DO_NOT_TOUCH: NONE
+    // Bearing logic
+    if (applyNewBearing && incomingBearing != null) {
+        builder.bearing(incomingBearing)
+        lastCameraBearing = incomingBearing
+    } else if (lastCameraBearing != null) {
+        builder.bearing(lastCameraBearing!!)
+    }
 
-DELIVERABLE: NONE
+    mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 1000)
+    
+    lastCenterRequest = centerRequest
+}
+```
 
-STOP_CONDITIONS:
-- stop if the objective is ambiguous
-- stop if a required file is outside FILES_ALLOWED
-
-ROLLBACK_EXPECTATION: NONE
-MAX_SCOPE: NONE
+## Completion Protocol
+- You MUST commit the requested changes if the build and test succeed.
+- Write your final execution status to `.ai/local_agent/RESULT.md`, including the `COMMIT_HASH`.
