@@ -63,74 +63,28 @@ fun MapLibrePMTilesPOCContainer(
     val gpsSourceId = "gps-source"
     val gpsLayerId = "gps-layer"
     
-    val pmtilesFile = java.io.File(context.getExternalFilesDir(null), "test.pmtiles")
+    val pmtilesFile = java.io.File(context.getExternalFilesDir(null), "mazowieckie_offroad.pmtiles")
     val fileExists = pmtilesFile.exists()
     
-    Log.d(TAG, "FILE_PATH=${pmtilesFile.absolutePath}")
-    Log.d(TAG, "FILE_EXISTS=$fileExists")
-    if (fileExists) {
-        Log.d(TAG, "FILE_SIZE=${pmtilesFile.length()}")
-    }
+    Log.d(TAG, "LOCAL_FILE_PATH=${pmtilesFile.absolutePath}")
+    Log.d(TAG, "LOCAL_FILE_EXISTS=$fileExists")
+    Log.d(TAG, "LOCAL_FILE_SIZE=${if(fileExists) pmtilesFile.length() else 0}")
     
-    // PMTiles POC vector style
-    val pmtilesStyleJson = """
-    {
-      "version": 8,
-      "sources": {
-        "pmtiles_source": {
-          "type": "vector",
-          "url": "pmtiles://file://${pmtilesFile.absolutePath}",
-          "attribution": "Protomaps / PMTiles POC"
+    // Load style from assets
+    val pmtilesStyleJson = remember(fileExists) {
+        if (fileExists) {
+            try {
+                context.assets.open("mapstyles/mazovia_offroad_v1.json").bufferedReader().use {
+                    it.readText().replace("{PMTILES_URI}", "pmtiles://file://${pmtilesFile.absolutePath}")
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed to load style", e)
+                ""
+            }
+        } else {
+            ""
         }
-      },
-      "layers": [
-        {
-          "id": "background",
-          "type": "background",
-          "paint": {
-            "background-color": "#EFEFEF"
-          }
-        },
-        {
-          "id": "earth",
-          "type": "fill",
-          "source": "pmtiles_source",
-          "source-layer": "earth",
-          "paint": {
-            "fill-color": "#D7D7D7"
-          }
-        },
-        {
-          "id": "water",
-          "type": "fill",
-          "source": "pmtiles_source",
-          "source-layer": "water",
-          "paint": {
-            "fill-color": "#81D4FA"
-          }
-        },
-        {
-          "id": "roads",
-          "type": "line",
-          "source": "pmtiles_source",
-          "source-layer": "roads",
-          "paint": {
-            "line-color": "#9E9E9E",
-            "line-width": 2
-          }
-        },
-        {
-          "id": "buildings",
-          "type": "fill",
-          "source": "pmtiles_source",
-          "source-layer": "buildings",
-          "paint": {
-            "fill-color": "#BDBDBD"
-          }
-        }
-      ]
     }
-    """.trimIndent()
 
     AndroidView(
         factory = { ctx ->
@@ -147,8 +101,8 @@ fun MapLibrePMTilesPOCContainer(
                 mapLibreMap.uiSettings.isCompassEnabled = false
                 
                 mapLibreMap.cameraPosition = CameraPosition.Builder()
-                    .target(LatLng(43.77, 11.25)) // Firenze POC
-                    .zoom(13.0)
+                    .target(LatLng(52.2, 21.0)) // Warsaw approximate
+                    .zoom(8.0)
                     .build()
 
                 mapLibreMap.addOnMoveListener(object : MapLibreMap.OnMoveListener {
@@ -164,10 +118,9 @@ fun MapLibrePMTilesPOCContainer(
                     true
                 }
 
-                if (fileExists) {
+                if (fileExists && pmtilesStyleJson.isNotEmpty()) {
                     mapLibreMap.setStyle(Style.Builder().fromJson(pmtilesStyleJson)) { style ->
                         Log.d(TAG, "SOURCE_ADDED=pmtiles_source")
-                        Log.d(TAG, "SOURCE_LAYER=earth,water,roads,buildings")
                         Log.d(TAG, "MAP_RENDERED=true")
                         
                         style.addSource(GeoJsonSource(routeSourceId))
@@ -257,17 +210,30 @@ fun MapLibrePMTilesPOCContainer(
                 }
             }
             
-            // MapLibrePMTilesPOCContainer does not use top padding for rider follow
-            mapLibreMap.setPadding(0, 0, 0, 0)
+            // MapLibrePMTilesPOCContainer padding for rider follow
+            val displayMetrics = mapView.context.resources.displayMetrics
+            val bottomPaddingPx = (displayMetrics.heightPixels * 0.4).toInt()
+            mapLibreMap.setPadding(0, 0, 0, bottomPaddingPx)
         },
         modifier = modifier
     )
 
     LaunchedEffect(centerRequest, currentPosition, bearing, isFollowMode, styleReady) {
         if (!styleReady) return@LaunchedEffect
-        // INTENTIONALLY DISABLED FOR POC-B: 
-        // We do not want the GPS position to override the camera while verifying Firenze vector tiles.
-        // The GPS marker will still update on the map, but the camera will remain free.
+        
+        val mapLibreMap = mapLibreMapRef.value ?: return@LaunchedEffect
+        
+        if (isFollowMode && currentPosition != null) {
+            val cameraBuilder = CameraPosition.Builder()
+                .target(LatLng(currentPosition.latitude, currentPosition.longitude))
+                .zoom(16.0)
+            
+            if (bearing != null) {
+                cameraBuilder.bearing(bearing.toDouble())
+            }
+            
+            mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraBuilder.build()), 1000)
+        }
     }
 
     DisposableEffect(lifecycleOwner) {

@@ -1,20 +1,21 @@
 # Current Engineering Task
 
-**Task:** Generate and validate a small custom Mazovia Offroad PMTiles prototype.
+**Task:** Phase C1/C2 - Mazovia Offroad Regional PMTiles & Style v1
 **Owner:** GEMINI
 **Status:** COMPLETED
 **Started:** 2026-09-18
-**Completed:** 2026-09-18
+**Completed:** 2026-09-19
 
 ## Objective
-Generate a small custom PMTiles prototype for the Siedlce-area using the approved Mazovia Offroad vector schema, then inspect the ACTUAL attributes present in the resulting vector tiles.
+Generate the full regional `mazowieckie_offroad.pmtiles` and implement `mazovia_offroad_v1.json` for MapLibre Native, ensuring offline rendering with enduro-specific tracktype and surface mapping.
 
 ## Accomplished
-- WSL2 Ubuntu environment verified and Tilemaker v3.1.0 built from source.
-- PBF data downloaded and output directories established outside Git.
-- Created custom `config.json` and `process.lua` schema focusing on enduro tags.
-- Successfully generated PMTiles for Siedlce area.
-- Inspected generated tiles using Python script:
-  - Verified `highway`, `surface`, and `tracktype` are preserved and filterable.
-  - Distinct surfaces include sand, dirt, grass, gravel.
-  - Distinct tracktypes include grade1-5.
+- Generated full regional PMTiles archive (264MB) using Tilemaker in WSL.
+- Built Python generator `tools/tiles/generate_style.py` for dynamic Style v1 creation.
+- Successfully verified PMTiles coverage and geometric data via MVT decoding scripts.
+- Diagnosed and fixed MapLibre blank-tile rendering bug (caused by missing `Open Sans Bold` glyphs on demotiles server; changed to `Open Sans Semibold`).
+- Re-enabled GPS camera follow for POC container.
+- MapLibre successfully renders continuous regional data with the new Style v1 on the physical device.
+
+## Next High-Level Step
+Foreground recording notification cancellation bug.
