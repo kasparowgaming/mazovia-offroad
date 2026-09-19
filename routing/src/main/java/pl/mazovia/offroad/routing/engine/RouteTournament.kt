@@ -59,7 +59,7 @@ internal object RouteTournament {
                     }
                 }
             }
-        }
+        }.distinct()
     }
 
     private fun pointAtOffset(

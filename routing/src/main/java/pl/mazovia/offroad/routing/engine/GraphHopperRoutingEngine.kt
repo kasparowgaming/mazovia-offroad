@@ -10,6 +10,9 @@ import com.graphhopper.util.Parameters
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import pl.mazovia.offroad.domain.model.*
 import pl.mazovia.offroad.domain.routing.*
 import pl.mazovia.offroad.routing.profile.OffroadProfileConfig
@@ -25,6 +28,9 @@ class GraphHopperRoutingEngine : RoutingEngine {
     private var graphHopper: GraphHopper? = null
     private var currentGraphPath: String? = null
     private var lastError: String? = null
+    
+    // Bounded concurrency limit for GraphHopper to prevent excessive memory/CPU usage
+    private val ghSemaphore = Semaphore(2)
 
     override suspend fun isReady(): Boolean = graphHopper != null
 
@@ -221,8 +227,8 @@ class GraphHopperRoutingEngine : RoutingEngine {
     ): RoutingResult = withContext(Dispatchers.IO) {
         val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
 
-        // Base route calculation
-        val baselineResult = calculateSingleRoute(origin, destination, profile, waypoints)
+        // Base route calculation (not speculative)
+        val baselineResult = calculateSingleRoute(origin, destination, profile, waypoints, isSpeculative = false)
         
         // If there are specific waypoints or if profile is BEZPIECZNY, just return the baseline
         if (waypoints.isNotEmpty() || profile == RoutingProfile.BEZPIECZNY) {
@@ -244,8 +250,10 @@ class GraphHopperRoutingEngine : RoutingEngine {
             val candidateDeferreds = corridors.map { corridor ->
                 async { 
                     try {
-                        val result = calculateSingleRoute(origin, destination, profile, corridor)
+                        val result = calculateSingleRoute(origin, destination, profile, corridor, isSpeculative = true)
                         (result as? RoutingResult.Success)?.route
+                    } catch (e: CancellationException) {
+                        throw e
                     } catch (e: Exception) {
                         null
                     }
@@ -261,6 +269,8 @@ class GraphHopperRoutingEngine : RoutingEngine {
                 return@withContext RoutingResult.Success(winner)
             }
             return@withContext baselineResult
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             android.util.Log.e("GraphHopperDiagnostic", "Tournament failed, falling back to baseline", e)
             return@withContext baselineResult
@@ -271,7 +281,8 @@ class GraphHopperRoutingEngine : RoutingEngine {
         origin: GeoPoint,
         destination: GeoPoint,
         profile: RoutingProfile,
-        waypoints: List<GeoPoint>
+        waypoints: List<GeoPoint>,
+        isSpeculative: Boolean = false
     ): RoutingResult = withContext(Dispatchers.IO) {
         val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
 
@@ -296,13 +307,20 @@ class GraphHopperRoutingEngine : RoutingEngine {
             android.util.Log.e("GraphHopperDiagnostic", "GHREQUEST_CREATED")
 
             android.util.Log.e("GraphHopperDiagnostic", "HOPPER_ROUTE_START")
-            val response = gh.route(request)
+            
+            // Execute in bounded semaphore to avoid memory starvation or thread contention issues
+            val response = ghSemaphore.withPermit {
+                gh.route(request)
+            }
+            
             android.util.Log.e("GraphHopperDiagnostic", "HOPPER_ROUTE_RETURNED")
 
             if (response.hasErrors()) {
                 val errorMsg = response.errors.joinToString { it.message ?: "Unknown error" }
                 android.util.Log.e("GraphHopperDiagnostic", "ROUTE ERROR: " + errorMsg)
-                lastError = errorMsg
+                if (!isSpeculative) {
+                    lastError = errorMsg
+                }
                 return@withContext when {
                     errorMsg.contains("Cannot find point", ignoreCase = true) ->
                         RoutingResult.Error(RoutingError.POINT_NOT_FOUND)
@@ -316,20 +334,22 @@ class GraphHopperRoutingEngine : RoutingEngine {
             val best = response.best
             
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_START")
-            val route = convertToRoute(best, origin, destination, profile)
+            val route = convertToRoute(best, origin, destination, profile, stripSyntheticWaypoints = isSpeculative)
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_DONE")
             
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_START")
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_DONE")
 
             RoutingResult.Success(route)
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: OutOfMemoryError) {
             android.util.Log.e("GraphHopperDiagnostic", "OOM in calculateSingleRoute", e)
-            lastError = "OOM: " + e.message
+            if (!isSpeculative) lastError = "OOM: " + e.message
             RoutingResult.Error(RoutingError.MEMORY_ERROR)
         } catch (e: Exception) {
             android.util.Log.e("GraphHopperDiagnostic", "FATAL EXCEPTION in calculateSingleRoute", e)
-            lastError = "Routing error: " + e.message
+            if (!isSpeculative) lastError = "Routing error: " + e.message
             RoutingResult.Error(RoutingError.CALCULATION_ERROR)
         }
     }
@@ -438,7 +458,8 @@ class GraphHopperRoutingEngine : RoutingEngine {
         path: ResponsePath,
         origin: GeoPoint,
         destination: GeoPoint,
-        profile: RoutingProfile
+        profile: RoutingProfile,
+        stripSyntheticWaypoints: Boolean = false
     ): Route {
         val points = path.points.map { point ->
             GeoPoint(
@@ -451,7 +472,11 @@ class GraphHopperRoutingEngine : RoutingEngine {
         // Extract segments with surface information from path details
         val segments = extractSegments(path, points)
         val metrics = RouteMetrics.fromSegments(segments)
-        val maneuvers = extractManeuvers(path)
+        
+        var maneuvers = extractManeuvers(path)
+        if (stripSyntheticWaypoints) {
+            maneuvers = maneuvers.filter { it.type != ManeuverType.WAYPOINT }
+        }
 
         return Route(
             id = UUID.randomUUID().toString(),
