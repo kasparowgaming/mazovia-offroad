@@ -89,11 +89,12 @@ internal object RouteTournament {
         }
         
         val limit = profileDetourLimit(profile)
+        // 0.1 meter epsilon to absorb floating point inaccuracies around the exact boundary
+        val maxAllowedDistance = baselineDistanceMeters * (1.0 + limit) + 0.1
 
-        // Filter valid candidates by detour limit
+        // Filter valid candidates by max allowed distance
         val eligible = candidates.filter { route ->
-            val detour = (route.totalDistanceMeters / baselineDistanceMeters) - 1.0
-            detour <= limit
+            route.totalDistanceMeters <= maxAllowedDistance
         }
 
         return eligible.maxByOrNull { route -> tournamentTerrainValue(route, profile) }

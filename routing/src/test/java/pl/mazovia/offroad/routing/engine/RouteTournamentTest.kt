@@ -59,10 +59,50 @@ class RouteTournamentTest {
         )
         assertEquals(candidateA, winner)
     }
+
+    @Test
+    fun `TERENOWY exact +60 percent detour boundary ACCEPTED`() {
+        val baselineDistance = 40000.0 // 40km
+        val boundaryDetour = createMockRoute(
+            distanceMeters = 64000.0,
+            offRoadMeters = 64000.0,
+            asphaltMeters = 0.0,
+            longestContinuousTerrain = 64000.0,
+            terrainRuns = 1,
+            longestConnector = 0.0
+        )
+        val winner = RouteTournament.chooseTournamentWinner(
+            candidates = listOf(boundaryDetour),
+            baselineDistanceMeters = baselineDistance,
+            profile = RoutingProfile.TERENOWY
+        )
+        assertEquals(boundaryDetour, winner)
+    }
+
+    @Test
+    fun `TERENOWY just below +60 percent detour ACCEPTED`() {
+        val baselineDistance = 40000.0 // 40km
+        val belowDetour = createMockRoute(
+            distanceMeters = 63999.0,
+            offRoadMeters = 63999.0,
+            asphaltMeters = 0.0,
+            longestContinuousTerrain = 63999.0,
+            terrainRuns = 1,
+            longestConnector = 0.0
+        )
+        val winner = RouteTournament.chooseTournamentWinner(
+            candidates = listOf(belowDetour),
+            baselineDistanceMeters = baselineDistance,
+            profile = RoutingProfile.TERENOWY
+        )
+        assertEquals(belowDetour, winner)
+    }
+
     @Test
     fun `CASE B - EXTREME DETOUR rejects candidate exceeding 60 percent limit for TERENOWY`() {
         val baselineDistance = 40000.0 // 40km
-        // 64001m is exactly 60.0025% detour, which exceeds 0.60 limit
+        
+        // 64001m exceeds the 1.6 * 40000.0 + 0.1 limit
         val extremeDetour = createMockRoute(
             distanceMeters = 64001.0,
             offRoadMeters = 64001.0,

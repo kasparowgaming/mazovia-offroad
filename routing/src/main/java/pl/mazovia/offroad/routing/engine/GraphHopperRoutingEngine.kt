@@ -1,5 +1,7 @@
 package pl.mazovia.offroad.routing.engine
 
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import com.graphhopper.GHRequest
 import com.graphhopper.GraphHopper
 import com.graphhopper.ResponsePath
@@ -11,8 +13,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.sync.Semaphore
-import kotlinx.coroutines.sync.withPermit
+
+
 import pl.mazovia.offroad.domain.model.*
 import pl.mazovia.offroad.domain.routing.*
 import pl.mazovia.offroad.routing.profile.OffroadProfileConfig
@@ -29,8 +31,11 @@ class GraphHopperRoutingEngine : RoutingEngine {
     private var currentGraphPath: String? = null
     private var lastError: String? = null
     
-    // Bounded concurrency limit for GraphHopper to prevent excessive memory/CPU usage
-    private val ghSemaphore = Semaphore(2)
+    // Safety mutex to ensure graph swapping/unloading does not race with active routing
+    private val engineMutex = Mutex()
+    
+    
+
 
     override suspend fun isReady(): Boolean = graphHopper != null
 
@@ -167,40 +172,47 @@ class GraphHopperRoutingEngine : RoutingEngine {
     }
 
     override suspend fun loadGraph(graphPath: String): Boolean = withContext(Dispatchers.IO) {
-        try {
-            unloadGraph()
-            
-            val hopper = initGraphHopper(graphPath)
-            
-            graphHopper = hopper
-            currentGraphPath = graphPath
-            lastError = null
-            true
-        } catch (e: Exception) {
-            lastError = "Failed to load graph: ${e.message}"
-            false
+        engineMutex.withLock {
+            try {
+                unloadGraphInternal()
+                
+                val hopper = initGraphHopper(graphPath)
+                
+                graphHopper = hopper
+                currentGraphPath = graphPath
+                lastError = null
+                true
+            } catch (e: Exception) {
+                lastError = "Failed to load graph: ${e.message}"
+                false
+            }
         }
     }
 
     override suspend fun validateAndSwapGraph(tempGraphPath: String): RoutingEngine.ImportResult = withContext(Dispatchers.IO) {
         val tempDir = File(tempGraphPath)
         try {
-            // 1. Validate the temp graph
+            // 1. Validate the temp graph outside the lock to not block routing too long
             val tempHopper = initGraphHopper(tempGraphPath)
             tempHopper.close() // Close it immediately after validation succeeds
             
-            // 2. Unload active graph
-            unloadGraph()
-            
-            // 3. Swap directories
-            val activeDir = File(tempDir.parentFile, "graph")
-            if (activeDir.exists()) {
-                activeDir.deleteRecursively()
+            engineMutex.withLock {
+                // 2. Unload active graph
+                unloadGraphInternal()
+                
+                // 3. Swap directories
+                val activeDir = File(tempDir.parentFile, "graph")
+                if (activeDir.exists()) {
+                    activeDir.deleteRecursively()
+                }
+                tempDir.renameTo(activeDir)
+                
+                // 4. Load the new active graph
+                val hopper = initGraphHopper(activeDir.absolutePath)
+                graphHopper = hopper
+                currentGraphPath = activeDir.absolutePath
+                lastError = null
             }
-            tempDir.renameTo(activeDir)
-            
-            // 4. Load the new active graph
-            loadGraph(activeDir.absolutePath)
             
             RoutingEngine.ImportResult.Success
         } catch (e: Exception) {
@@ -212,7 +224,13 @@ class GraphHopperRoutingEngine : RoutingEngine {
         }
     }
 
-    override suspend fun unloadGraph() {
+    override suspend fun unloadGraph() = withContext(Dispatchers.IO) {
+        engineMutex.withLock {
+            unloadGraphInternal()
+        }
+    }
+
+    private fun unloadGraphInternal() {
         try {
             graphHopper?.close()
         } catch (_: Exception) {}
@@ -244,23 +262,24 @@ class GraphHopperRoutingEngine : RoutingEngine {
                 return@withContext baselineResult
             }
 
-            android.util.Log.e("GraphHopperDiagnostic", "Generating ${corridors.size} alternative corridors")
+            android.util.Log.e("GraphHopperDiagnostic", "Generating ${corridors.size} alternative corridors sequentially")
             
-            // Calculate alternatives safely and in parallel
-            val candidateDeferreds = corridors.map { corridor ->
-                async { 
-                    try {
-                        val result = calculateSingleRoute(origin, destination, profile, corridor, isSpeculative = true)
-                        (result as? RoutingResult.Success)?.route
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        null
+            val candidates = mutableListOf<Route>()
+            for (corridor in corridors) {
+                try {
+                    val result = calculateSingleRoute(origin, destination, profile, corridor, isSpeculative = true)
+                    val route = (result as? RoutingResult.Success)?.route
+                    if (route != null) {
+                        candidates.add(route)
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Skip failed speculative candidate
                 }
             }
 
-            val candidates = candidateDeferreds.mapNotNull { it.await() } + baselineRoute
+            candidates.add(baselineRoute)
             
             android.util.Log.e("GraphHopperDiagnostic", "Tournament evaluating ${candidates.size} valid candidates")
             val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile)
@@ -308,8 +327,7 @@ class GraphHopperRoutingEngine : RoutingEngine {
 
             android.util.Log.e("GraphHopperDiagnostic", "HOPPER_ROUTE_START")
             
-            // Execute in bounded semaphore to avoid memory starvation or thread contention issues
-            val response = ghSemaphore.withPermit {
+            val response = engineMutex.withLock {
                 gh.route(request)
             }
             
@@ -376,16 +394,22 @@ class GraphHopperRoutingEngine : RoutingEngine {
                 putHint("ch.disable", true)
             }
 
-            val response = gh.route(request)
-
-            if (response.hasErrors()) {
-                return@withContext listOf(RoutingResult.Error(RoutingError.CALCULATION_ERROR))
+            val response = engineMutex.withLock {
+                gh.route(request)
             }
-
+            
+            if (response.hasErrors()) {
+                val errorMsg = response.errors.firstOrNull()?.message ?: "Unknown error"
+                lastError = errorMsg
+                return@withContext listOf(RoutingResult.Error(RoutingError.NO_ROUTE_FOUND))
+            }
+            
             response.all.map { path ->
                 val route = convertToRoute(path, origin, destination, profile)
                 RoutingResult.Success(route)
             }
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             lastError = "Alternatives error: ${e.message}"
             listOf(RoutingResult.Error(RoutingError.CALCULATION_ERROR))
@@ -436,6 +460,8 @@ class GraphHopperRoutingEngine : RoutingEngine {
                         candidates.add(LoopCandidate(route = route, score = score))
                     }
                 }
+            } catch (e: CancellationException) {
+                throw e
             } catch (_: Exception) {
                 // Skip failed candidates
             }
@@ -514,14 +540,21 @@ class GraphHopperRoutingEngine : RoutingEngine {
                 if (segPoints.size >= 2) {
                     val distance = segPoints.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
                     val surface = Surface.fromOsmTag(surfaceTag)
+                    
+                    val rcTag = roadClassDetails?.find { fromIdx >= (it.first as Int) && fromIdx < (it.last as Int) }?.value?.toString()
+                    val highway = HighwayType.fromOsmTag(rcTag)
+                    
+                    val ttTag = trackTypeDetails?.find { fromIdx >= (it.first as Int) && fromIdx < (it.last as Int) }?.value?.toString()
+                    val trackType = TrackType.fromOsmTag(ttTag)
 
                     segments.add(
                         RouteSegment(
                             points = segPoints,
                             distanceMeters = distance,
                             surface = surface,
-                            highway = HighwayType.UNKNOWN,
-                            dataConfidence = if (surfaceTag != null) DataConfidence.CONFIRMED
+                            highway = highway,
+                            trackType = trackType,
+                            dataConfidence = if (surfaceTag != null || rcTag != null) DataConfidence.CONFIRMED
                             else DataConfidence.UNKNOWN
                         )
                     )
@@ -530,12 +563,19 @@ class GraphHopperRoutingEngine : RoutingEngine {
         } else {
             // Fallback: single segment with unknown surface
             val distance = allPoints.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
+            val rcTag = roadClassDetails?.firstOrNull()?.value?.toString()
+            val highway = HighwayType.fromOsmTag(rcTag)
+            
+            val ttTag = trackTypeDetails?.firstOrNull()?.value?.toString()
+            val trackType = TrackType.fromOsmTag(ttTag)
+            
             segments.add(
                 RouteSegment(
                     points = allPoints,
                     distanceMeters = distance,
                     surface = Surface.UNKNOWN,
-                    highway = HighwayType.UNKNOWN,
+                    highway = highway,
+                    trackType = trackType,
                     dataConfidence = DataConfidence.UNKNOWN
                 )
             )

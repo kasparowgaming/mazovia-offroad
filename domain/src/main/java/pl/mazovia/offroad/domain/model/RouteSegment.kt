@@ -18,6 +18,17 @@ data class RouteSegment(
     val osmWayId: Long? = null,
     val name: String? = null
 ) {
-    val isOffRoad: Boolean get() = surface.isOffRoad || highway.isOffRoadCandidate
-    val isAsphalt: Boolean get() = !surface.isOffRoad && !highway.isOffRoadCandidate
+    val isOffRoad: Boolean get() {
+        if (surface != Surface.UNKNOWN) {
+            return surface.isOffRoad
+        }
+        return highway.isOffRoadCandidate
+    }
+    
+    val isAsphalt: Boolean get() {
+        if (surface != Surface.UNKNOWN) {
+            return !surface.isOffRoad
+        }
+        return !highway.isOffRoadCandidate
+    }
 }
