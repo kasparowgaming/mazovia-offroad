@@ -34,6 +34,15 @@ class GraphHopperRoutingEngine : RoutingEngine {
     // Safety mutex to ensure graph swapping/unloading does not race with active routing
     private val engineMutex = Mutex()
     
+    // Visible for testing / benchmarking
+    internal var benchmarkListener: BenchmarkListener? = null
+
+    internal interface BenchmarkListener {
+        fun onCandidateEvaluated(route: Route?, isBaseline: Boolean, profile: RoutingProfile, elapsedMs: Long, error: String? = null)
+        fun onTournamentStarted(baselineDistance: Double, limitPercent: Double, candidateCount: Int)
+        fun onTournamentFinished(winner: Route?)
+    }
+    
     
 
 
@@ -282,7 +291,18 @@ class GraphHopperRoutingEngine : RoutingEngine {
             candidates.add(baselineRoute)
             
             android.util.Log.e("GraphHopperDiagnostic", "Tournament evaluating ${candidates.size} valid candidates")
+            val limit = RouteTournament.profileDetourLimit(profile)
+            try {
+                benchmarkListener?.onTournamentStarted(baselineRoute.totalDistanceMeters, limit, candidates.size)
+            } catch (e: Exception) {
+                android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
+            }
             val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile)
+            try {
+                benchmarkListener?.onTournamentFinished(winner)
+            } catch (e: Exception) {
+                android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
+            }
 
             if (winner != null) {
                 return@withContext RoutingResult.Success(winner)
@@ -291,6 +311,9 @@ class GraphHopperRoutingEngine : RoutingEngine {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
+            try {
+                benchmarkListener?.onTournamentFinished(null)
+            } catch (ignored: Exception) {}
             android.util.Log.e("GraphHopperDiagnostic", "Tournament failed, falling back to baseline", e)
             return@withContext baselineResult
         }
@@ -305,7 +328,11 @@ class GraphHopperRoutingEngine : RoutingEngine {
     ): RoutingResult = withContext(Dispatchers.IO) {
         val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
 
-        try {
+        val startTime = System.nanoTime()
+        var errorMsg: String? = null
+        var resultRoute: Route? = null
+        
+        val result = try {
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_CALCULATION_START")
             val profileName = profile.toGraphHopperProfile()
             android.util.Log.e("GraphHopperDiagnostic", "PROFILE_SELECTED: " + profileName)
@@ -334,42 +361,56 @@ class GraphHopperRoutingEngine : RoutingEngine {
             android.util.Log.e("GraphHopperDiagnostic", "HOPPER_ROUTE_RETURNED")
 
             if (response.hasErrors()) {
-                val errorMsg = response.errors.joinToString { it.message ?: "Unknown error" }
-                android.util.Log.e("GraphHopperDiagnostic", "ROUTE ERROR: " + errorMsg)
+                val err = response.errors.joinToString { it.message ?: "Unknown error" }
+                errorMsg = err
+                android.util.Log.e("GraphHopperDiagnostic", "ROUTE ERROR: " + err)
                 if (!isSpeculative) {
-                    lastError = errorMsg
+                    lastError = err
                 }
-                return@withContext when {
-                    errorMsg.contains("Cannot find point", ignoreCase = true) ->
+                when {
+                    err.contains("Cannot find point", ignoreCase = true) ->
                         RoutingResult.Error(RoutingError.POINT_NOT_FOUND)
-                    errorMsg.contains("Connection between locations not found", ignoreCase = true) ->
+                    err.contains("Connection between locations not found", ignoreCase = true) ->
                         RoutingResult.Error(RoutingError.NO_ROUTE_FOUND)
                     else -> RoutingResult.Error(RoutingError.CALCULATION_ERROR)
                 }
+            } else {
+
+                android.util.Log.e("GraphHopperDiagnostic", "RESPONSE_PATH_COUNT: " + response.all.size)
+                val best = response.best
+                
+                android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_START")
+                val route = convertToRoute(best, origin, destination, profile, stripSyntheticWaypoints = isSpeculative)
+                android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_DONE")
+                
+                android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_START")
+                android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_DONE")
+                
+                resultRoute = route
+                RoutingResult.Success(route)
             }
-
-            android.util.Log.e("GraphHopperDiagnostic", "RESPONSE_PATH_COUNT: " + response.all.size)
-            val best = response.best
-            
-            android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_START")
-            val route = convertToRoute(best, origin, destination, profile, stripSyntheticWaypoints = isSpeculative)
-            android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_DONE")
-            
-            android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_START")
-            android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_DONE")
-
-            RoutingResult.Success(route)
         } catch (e: CancellationException) {
             throw e
         } catch (e: OutOfMemoryError) {
             android.util.Log.e("GraphHopperDiagnostic", "OOM in calculateSingleRoute", e)
-            if (!isSpeculative) lastError = "OOM: " + e.message
+            errorMsg = "OOM: ${e.message}"
+            if (!isSpeculative) lastError = errorMsg
             RoutingResult.Error(RoutingError.MEMORY_ERROR)
         } catch (e: Exception) {
             android.util.Log.e("GraphHopperDiagnostic", "FATAL EXCEPTION in calculateSingleRoute", e)
+            errorMsg = "Exception: ${e.message}"
             if (!isSpeculative) lastError = "Routing error: " + e.message
             RoutingResult.Error(RoutingError.CALCULATION_ERROR)
         }
+        
+        val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
+        try {
+            benchmarkListener?.onCandidateEvaluated(resultRoute, !isSpeculative, profile, elapsedMs, errorMsg)
+        } catch (e: Exception) {
+            android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
+        }
+        
+        result
     }
 
     override suspend fun calculateAlternatives(
