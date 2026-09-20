@@ -110,18 +110,26 @@ class RouteBenchmarkRunnerTest {
                 listOf(GeoPoint(52.1567802, 22.3448868), GeoPoint(52.3000, 22.6900), GeoPoint(51.9900, 22.7900), GeoPoint(51.8900, 22.3700), GeoPoint(52.1567802, 22.3448868)))
         )
         
-        val profiles = listOf(RoutingProfile.BEZPIECZNY, RoutingProfile.TERENOWY, RoutingProfile.ODKRYWCZY)
+        // Exact comma-separated names; empty/unknown filters fail instead of silently running everything.
+        val scenarioFilter = System.getenv("MAZOVIA_BENCH_SCENARIOS")?.split(",")?.map { it.trim() }?.toSet()
+        val profileFilter = System.getenv("MAZOVIA_BENCH_PROFILES")?.split(",")?.map { it.trim() }?.toSet()
+        require(scenarioFilter == null || (scenarioFilter.isNotEmpty() && scenarioFilter.all { name -> scenarios.any { it.name == name } }))
+        require(profileFilter == null || (profileFilter.isNotEmpty() && profileFilter.all { name -> RoutingProfile.entries.any { it.name == name } }))
+        val selectedScenarios = scenarios.filter { scenarioFilter == null || it.name in scenarioFilter }
+        val profiles = RoutingProfile.entries.filter { profileFilter == null || it.name in profileFilter }
+        println("Executing ${selectedScenarios.size} scenarios x ${profiles.size} profiles; 1 warmup + 2 measured runs")
+        println("Loop A/B/C names are legacy labels ONLY: current loops use start + targetKm, not legacy waypoint geometry.")
         val iterations = 3 // 1 warmup + 2 measured
         
         val summaryResults = mutableListOf<BenchmarkSummaryResult>()
         val candidateResults = mutableListOf<BenchmarkCandidateResult>()
         
-        for (scenario in scenarios) {
+        for (scenario in selectedScenarios) {
             for (profile in profiles) {
                 for (runIndex in 0 until iterations) {
                     val isWarmup = runIndex == 0
                     
-                    val listener = RecordingBenchmarkListener(scenario.name, profile, runIndex, isWarmup)
+                    val listener = RecordingBenchmarkListener(scenario.name, profile, runIndex, isWarmup, scenario.kind == "loop")
                     engine.benchmarkListener = listener
                     
                     val usedHeapBefore = measureUsedHeap()
@@ -161,50 +169,14 @@ class RouteBenchmarkRunnerTest {
                         }
                     }
                     
+                    listener.completeScenario(route)
                     val usedHeapAfter = measureUsedHeap()
                     
-                    val diagnostics = route?.let { routeDiagnostics(it, listener.baselineDistance ?: 0.0) }
+
                     
                     // Summarize
                     if (!isWarmup) {
-                        val summary = BenchmarkSummaryResult(
-                            scenarioName = scenario.name,
-                            origin = scenario.origin,
-                            destination = scenario.destination,
-                            profile = profile,
-                            runIndex = runIndex,
-                            isWarmup = isWarmup,
-                            success = success,
-                            failureReason = failureReason,
-                            
-                            baselineDistanceMeters = listener.baselineDistance ?: 0.0,
-                            selectedDistanceMeters = route?.totalDistanceMeters ?: 0.0,
-                            detourPercent = diagnostics?.detourPercent ?: 0,
-                            
-                            terrainDistanceMeters = route?.metrics?.offRoadDistanceMeters ?: 0.0,
-                            terrainPercent = route?.metrics?.offRoadPercentage?.toInt() ?: 0,
-                            longestContinuousTerrainMeters = route?.metrics?.longestContinuousTerrainMeters ?: 0.0,
-                            terrainRunCount = route?.metrics?.terrainRunCount ?: 0,
-                            longestAsphaltConnectorMeters = route?.metrics?.longestAsphaltConnectorMeters ?: 0.0,
-                            
-                            selectedTournamentScore = 0.0, // Calculated dynamically by listener if applicable
-                            
-                            candidateCountAttempted = listener.candidatesEvaluated,
-                            candidateCountSuccessful = listener.candidatesSuccess,
-                            candidateCountRejectedByDetour = listener.candidatesFailedDetourGuard,
-                            candidateCountFailed = listener.candidatesFailed,
-                            
-                            baselineTimeMs = listener.baselineTimeMs,
-                            tournamentTimeMs = listener.tournamentTimeMs,
-                            totalTimeMs = totalTimeNano / 1_000_000,
-                            
-                            uTurnCount = diagnostics?.uTurnCount ?: 0,
-                            shortManeuverLegCount = diagnostics?.shortManeuverLegCount ?: 0,
-                            
-                            usedHeapBeforeBytes = usedHeapBefore,
-                            usedHeapAfterBytes = usedHeapAfter,
-                            heapDeltaBytes = usedHeapAfter - usedHeapBefore
-                        )
+                        val summary = listener.summarize(scenario, route, failureReason, totalTimeNano, usedHeapBefore, usedHeapAfter)
                         summaryResults.add(summary)
                         candidateResults.addAll(listener.capturedCandidates)
                         
@@ -220,93 +192,13 @@ class RouteBenchmarkRunnerTest {
         BenchmarkCsvExporter.writeSummaryCsv(File(outDir, "benchmark-summary.csv"), summaryResults)
         BenchmarkCsvExporter.writeCandidateCsv(File(outDir, "benchmark-candidates.csv"), candidateResults)
         
+        engine.benchmarkListener = null
+        engine.unloadGraph()
         println("Benchmark completed. Results written to ${outDir.absolutePath}")
     }
 
     private fun measureUsedHeap(): Long {
         val rt = Runtime.getRuntime()
         return rt.totalMemory() - rt.freeMemory()
-    }
-}
-
-/**
- * 7. PASSIVE LISTENER implementation.
- */
-internal class RecordingBenchmarkListener(
-    private val scenarioName: String,
-    private val profile: RoutingProfile,
-    private val runIndex: Int,
-    private val isWarmup: Boolean
-) : GraphHopperRoutingEngine.BenchmarkListener {
-
-    var baselineDistance: Double? = null
-    var baselineTimeMs: Long = 0
-    var tournamentTimeMs: Long = 0
-    
-    var candidatesEvaluated = 0
-    var candidatesSuccess = 0
-    var candidatesFailedDetourGuard = 0
-    var candidatesFailed = 0
-    
-    val capturedCandidates = mutableListOf<BenchmarkCandidateResult>()
-    
-    private var limitPercent: Double = 0.0
-
-    override fun onCandidateEvaluated(
-        route: Route?,
-        isBaseline: Boolean,
-        profile: RoutingProfile,
-        elapsedMs: Long,
-        error: String?
-    ) {
-        if (isBaseline) {
-            baselineDistance = route?.totalDistanceMeters
-            baselineTimeMs = elapsedMs
-        } else {
-            candidatesEvaluated++
-            if (route != null) candidatesSuccess++ else candidatesFailed++
-        }
-        
-        if (route != null && baselineDistance != null) {
-            // For recording in CSV only; does not affect actual routing decisions
-            val maxAllowed = baselineDistance!! * (1.0 + limitPercent) + 0.1
-            val detourAccepted = route.totalDistanceMeters <= maxAllowed
-            if (!isBaseline && !detourAccepted) {
-                candidatesFailedDetourGuard++
-            }
-        }
-        
-        if (!isWarmup) {
-            capturedCandidates.add(
-                BenchmarkCandidateResult(
-                    scenarioName = scenarioName,
-                    profile = profile,
-                    runIndex = runIndex,
-                    isWarmup = isWarmup,
-                    candidateId = route?.id ?: "failed-$candidatesEvaluated",
-                    isBaseline = isBaseline,
-                    distanceMeters = route?.totalDistanceMeters ?: 0.0,
-                    detourPercent = routeDiagnostics(route ?: return, baselineDistance ?: 0.0).detourPercent,
-                    terrainPercent = route.metrics.offRoadPercentage.toInt(),
-                    longestContinuousTerrainMeters = route.metrics.longestContinuousTerrainMeters,
-                    terrainRunCount = route.metrics.terrainRunCount,
-                    longestAsphaltConnectorMeters = route.metrics.longestAsphaltConnectorMeters,
-                    tournamentScore = 0.0, // This is logged when tournament finishes if possible, but route doesn't have it natively
-                    acceptedByDetourGuard = route != null && baselineDistance != null && route.totalDistanceMeters <= (baselineDistance!! * (1.0 + limitPercent) + 0.1),
-                    routingSuccess = route != null,
-                    elapsedMs = elapsedMs,
-                    failureReason = error
-                )
-            )
-        }
-    }
-
-    override fun onTournamentStarted(baselineDistance: Double, limitPercent: Double, candidateCount: Int) {
-        this.baselineDistance = baselineDistance
-        this.limitPercent = limitPercent
-    }
-
-    override fun onTournamentFinished(winner: Route?) {
-        // Tournament took place internally
     }
 }

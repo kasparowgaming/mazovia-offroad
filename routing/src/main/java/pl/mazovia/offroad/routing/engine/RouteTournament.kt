@@ -9,6 +9,16 @@ import kotlin.math.sin
 import kotlin.math.sqrt
 
 internal object RouteTournament {
+    /** Observations from the actual eligibility/selection pass, never routing inputs. */
+    data class CandidateEvaluation(
+        val route: Route,
+        val baselineDistanceMeters: Double,
+        val detourLimit: Double?,
+        val maxAllowedDistanceMeters: Double?,
+        val acceptedByDetourGuard: Boolean?,
+        val score: Double?,
+        val rejectionReason: String?
+    )
     private const val EARTH_RADIUS_METERS = 6_371_000.0
 
     /**
@@ -81,7 +91,8 @@ internal object RouteTournament {
     fun chooseTournamentWinner(
         candidates: List<Route>,
         baselineDistanceMeters: Double,
-        profile: RoutingProfile
+        profile: RoutingProfile,
+        observations: MutableList<CandidateEvaluation>? = null
     ): Route? {
         if (profile == RoutingProfile.BEZPIECZNY || candidates.isEmpty() || baselineDistanceMeters <= 0.0) {
             // For normal mode, just pick the shortest or direct
@@ -97,7 +108,25 @@ internal object RouteTournament {
             route.totalDistanceMeters <= maxAllowedDistance
         }
 
-        return eligible.maxByOrNull { route -> tournamentTerrainValue(route, profile) }
+        val scores = if (observations != null) java.util.IdentityHashMap<Route, Double>() else null
+        val winner = eligible.maxByOrNull { route ->
+            val score = tournamentTerrainValue(route, profile)
+            scores?.put(route, score)
+            score
+        }
+        if (observations != null) {
+            for (route in candidates) {
+                val accepted = route.totalDistanceMeters <= maxAllowedDistance
+                // maxByOrNull skips its selector for a singleton. Its score is
+                // still defined by the same authoritative scoring function.
+                val score = if (accepted) scores!![route] ?: tournamentTerrainValue(route, profile) else null
+                observations.add(CandidateEvaluation(
+                    route, baselineDistanceMeters, limit, maxAllowedDistance, accepted, score,
+                    if (accepted) null else if (!route.totalDistanceMeters.isFinite()) "INVALID_CANDIDATE" else "DETOUR_LIMIT"
+                ))
+            }
+        }
+        return winner
     }
 
     internal fun tournamentTerrainValue(route: Route, profile: RoutingProfile): Double {

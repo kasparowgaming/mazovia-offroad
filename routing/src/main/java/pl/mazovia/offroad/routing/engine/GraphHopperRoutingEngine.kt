@@ -56,9 +56,18 @@ open class GraphHopperRoutingEngine : RoutingEngine {
     internal var benchmarkListener: BenchmarkListener? = null
 
     internal interface BenchmarkListener {
-        fun onCandidateEvaluated(route: Route?, isBaseline: Boolean, profile: RoutingProfile, elapsedMs: Long, error: String? = null)
-        fun onTournamentStarted(baselineDistance: Double, limitPercent: Double, candidateCount: Int)
-        fun onTournamentFinished(winner: Route?)
+        fun onRouteStarted() {}
+        fun onCandidateEvaluated(candidateId: String, route: Route?, isBaseline: Boolean, waypoints: List<GeoPoint>, elapsedMs: Long, error: String?, routingError: RoutingError?) {}
+        fun onTournamentFinished(winner: Route?, evaluations: List<RouteTournament.CandidateEvaluation>, elapsedNanos: Long) {}
+        fun onRouteFinished(selected: Route?, tournamentStatus: String) {}
+    }
+
+    private inline fun observe(listener: BenchmarkListener?, event: (BenchmarkListener) -> Unit) {
+        try {
+            if (listener != null) event(listener)
+        } catch (e: Exception) {
+            android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
+        }
     }
 
 
@@ -350,33 +359,40 @@ open class GraphHopperRoutingEngine : RoutingEngine {
     ): RoutingResult = withContext(Dispatchers.IO) {
         engineMutex.withLock {
             val gh = engineState.graphHopper ?: return@withLock RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
+            val listener = benchmarkListener
+            observe(listener) { it.onRouteStarted() }
 
             kotlin.coroutines.coroutineContext.ensureActive()
             // Base route calculation (not speculative)
-            val baselineResult = calculateSingleRoute(gh, origin, destination, profile, waypoints, isSpeculative = false)
+            val baselineResult = calculateSingleRoute(gh, origin, destination, profile, waypoints, isSpeculative = false, candidateId = "baseline", listener = listener)
             kotlin.coroutines.coroutineContext.ensureActive()
 
             // If there are specific waypoints or if profile is BEZPIECZNY, just return the baseline
             if (waypoints.isNotEmpty() || profile == RoutingProfile.BEZPIECZNY) {
+                observe(listener) { it.onRouteFinished((baselineResult as? RoutingResult.Success)?.route, "NOT_APPLICABLE") }
                 return@withLock baselineResult
             }
 
             // We only proceed with geometric alternatives if baseline succeeds
-            val baselineRoute = (baselineResult as? RoutingResult.Success)?.route ?: return@withLock baselineResult
+            val baselineRoute = (baselineResult as? RoutingResult.Success)?.route ?: run {
+                observe(listener) { it.onRouteFinished(null, "BASELINE_FAILED") }
+                return@withLock baselineResult
+            }
 
             try {
                 val corridors = RouteTournament.profileDiversityCorridors(origin, destination, profile)
                 if (corridors.isEmpty()) {
+                    observe(listener) { it.onRouteFinished(baselineRoute, "NO_CORRIDORS") }
                     return@withLock baselineResult
                 }
 
                 android.util.Log.e("GraphHopperDiagnostic", "Generating ${corridors.size} alternative corridors sequentially")
 
                 val candidates = mutableListOf<Route>()
-                for (corridor in corridors) {
+                for ((index, corridor) in corridors.withIndex()) {
                     kotlin.coroutines.coroutineContext.ensureActive()
                     try {
-                        val result = calculateSingleRoute(gh, origin, destination, profile, corridor, isSpeculative = true)
+                        val result = calculateSingleRoute(gh, origin, destination, profile, corridor, isSpeculative = true, candidateId = "corridor-${index + 1}", listener = listener)
                         kotlin.coroutines.coroutineContext.ensureActive()
                         val route = (result as? RoutingResult.Success)?.route
                         if (route != null) {
@@ -392,18 +408,13 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                 candidates.add(baselineRoute)
 
                 android.util.Log.e("GraphHopperDiagnostic", "Tournament evaluating ${candidates.size} valid candidates")
-                val limit = RouteTournament.profileDetourLimit(profile)
-                try {
-                    benchmarkListener?.onTournamentStarted(baselineRoute.totalDistanceMeters, limit, candidates.size)
-                } catch (e: Exception) {
-                    android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
-                }
-                val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile)
-                try {
-                    benchmarkListener?.onTournamentFinished(winner)
-                } catch (e: Exception) {
-                    android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
-                }
+                val evaluations = if (listener != null) mutableListOf<RouteTournament.CandidateEvaluation>() else null
+                val tournamentStart = System.nanoTime()
+                val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile, evaluations)
+                // Evaluation/selection only: excludes GH routing and listener/CSV work.
+                val tournamentNanos = System.nanoTime() - tournamentStart
+                observe(listener) { it.onTournamentFinished(winner, evaluations.orEmpty(), tournamentNanos) }
+                observe(listener) { it.onRouteFinished(winner ?: baselineRoute, if (winner != null) "EVALUATED" else "FALLBACK") }
 
                 if (winner != null) {
                     return@withLock RoutingResult.Success(winner)
@@ -412,9 +423,7 @@ open class GraphHopperRoutingEngine : RoutingEngine {
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                try {
-                    benchmarkListener?.onTournamentFinished(null)
-                } catch (ignored: Exception) {}
+                observe(listener) { it.onRouteFinished(baselineRoute, "EVALUATION_FAILED") }
                 android.util.Log.e("GraphHopperDiagnostic", "Tournament failed, falling back to baseline", e)
                 return@withLock baselineResult
             }
@@ -427,7 +436,9 @@ open class GraphHopperRoutingEngine : RoutingEngine {
         destination: GeoPoint,
         profile: RoutingProfile,
         waypoints: List<GeoPoint>,
-        isSpeculative: Boolean = false
+        isSpeculative: Boolean = false,
+        candidateId: String,
+        listener: BenchmarkListener?
     ): RoutingResult {
         val startTime = System.nanoTime()
         var errorMsg: String? = null
@@ -505,11 +516,7 @@ open class GraphHopperRoutingEngine : RoutingEngine {
         }
 
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
-        try {
-            benchmarkListener?.onCandidateEvaluated(resultRoute, !isSpeculative, profile, elapsedMs, errorMsg)
-        } catch (e: Exception) {
-            android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
-        }
+        observe(listener) { it.onCandidateEvaluated(candidateId, resultRoute, !isSpeculative, waypoints, elapsedMs, errorMsg, (result as? RoutingResult.Error)?.error) }
 
         return result
     }
