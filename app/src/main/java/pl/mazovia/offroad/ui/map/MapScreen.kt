@@ -37,6 +37,7 @@ fun MapScreen(
     navigationManager: NavigationManager,
     appModeManager: AppModeManager,
     locationClient: pl.mazovia.offroad.domain.location.LocationClient,
+    placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository,
     onNavigateToOfflineData: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -49,6 +50,7 @@ fun MapScreen(
                     navigationManager, 
                     appModeManager, 
                     locationClient,
+                    placeSearchRepository,
                     context.applicationContext as android.app.Application
                 ) as T
             }
@@ -73,9 +75,16 @@ fun MapScreen(
         SearchBar(
             query = uiState.searchQuery,
             destinationName = uiState.destinationName,
+            searchResults = uiState.searchResults,
+            isSearching = uiState.isSearching,
             onQueryChange = { viewModel.updateSearchQuery(it) },
             onSearch = { viewModel.search() },
             onClear = { viewModel.clearDestination() },
+            onResultSelected = { result ->
+                viewModel.updateSearchQuery("")
+                viewModel.setDestination(result.location)
+                // Add center requested to focus map on destination
+            },
             modifier = Modifier
                 .align(Alignment.TopCenter)
                 .padding(16.dp)

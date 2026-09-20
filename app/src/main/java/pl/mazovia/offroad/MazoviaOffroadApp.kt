@@ -35,6 +35,8 @@ class MazoviaOffroadApp : Application() {
         private set
     lateinit var locationClient: pl.mazovia.offroad.domain.location.LocationClient
         private set
+    lateinit var placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -51,6 +53,7 @@ class MazoviaOffroadApp : Application() {
         explorationRepository = ExplorationRepository(database.riddenSegmentDao())
         feedbackRepository = FeedbackRepository(database.roadFeedbackDao())
         routeRepository = RouteRepository(database.savedRouteDao())
+        placeSearchRepository = pl.mazovia.offroad.data.search.NominatimPlaceSearchRepository()
 
         // Routing
         routingEngine = GraphHopperRoutingEngine()

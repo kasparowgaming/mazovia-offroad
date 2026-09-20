@@ -95,6 +95,7 @@ private fun PlanningShell(
                     navigationManager = app.navigationManager,
                     appModeManager = appModeManager,
                     locationClient = app.locationClient,
+                    placeSearchRepository = app.placeSearchRepository,
                     onNavigateToOfflineData = { showOfflineData = true }
                 )
                 MazoviaTab.TRASY -> RoutesScreen(

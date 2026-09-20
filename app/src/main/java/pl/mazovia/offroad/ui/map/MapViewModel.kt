@@ -19,6 +19,8 @@ data class MapUiState(
     val destination: GeoPoint? = null,
     val destinationName: String? = null,
     val searchQuery: String = "",
+    val searchResults: List<PlaceSearchResult> = emptyList(),
+    val isSearching: Boolean = false,
     val selectedProfile: RoutingProfile = RoutingProfile.TERENOWY,
     val routePoints: List<GeoPoint> = emptyList(),
     val routeMetrics: RouteMetrics? = null,
@@ -39,6 +41,7 @@ class MapViewModel(
     private val navigationManager: NavigationManager,
     private val appModeManager: AppModeManager,
     private val locationClient: pl.mazovia.offroad.domain.location.LocationClient,
+    private val placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository,
     private val application: android.app.Application
 ) : ViewModel() {
 
@@ -49,6 +52,7 @@ class MapViewModel(
     val centerRequests: StateFlow<Long> = _centerRequests.asStateFlow()
     
     private var locationJob: Job? = null
+    private var searchJob: Job? = null
     private var hasAutoCentered = false
 
     init {
@@ -84,11 +88,41 @@ class MapViewModel(
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
+        
+        searchJob?.cancel()
+        
+        val normalizedLen = pl.mazovia.offroad.domain.model.StringNormalization.normalizeForSearch(query).length
+        if (normalizedLen < 3) {
+            _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
+            return
+        }
+
+        searchJob = viewModelScope.launch {
+            kotlinx.coroutines.delay(250) // debounce
+            performSearch(query)
+        }
+    }
+
+    private suspend fun performSearch(query: String) {
+        _uiState.update { it.copy(isSearching = true) }
+        
+        val anchor = _uiState.value.currentPosition ?: GeoPoint.WARSAW
+        
+        try {
+            val results = placeSearchRepository.searchPlaces(query, anchor)
+            _uiState.update { it.copy(searchResults = results, isSearching = false) }
+        } catch (e: Exception) {
+            _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
+            android.util.Log.e("MapViewModel", "Search error", e)
+        }
     }
 
     fun search() {
-        // Search implementation - nominatim or local geocoding
-        // STATUS: NOT IMPLEMENTED - would use Nominatim API
+        // Triggered by IME action if needed, already handled by debounce
+        searchJob?.cancel()
+        viewModelScope.launch {
+            performSearch(_uiState.value.searchQuery)
+        }
     }
 
     fun clearDestination() {

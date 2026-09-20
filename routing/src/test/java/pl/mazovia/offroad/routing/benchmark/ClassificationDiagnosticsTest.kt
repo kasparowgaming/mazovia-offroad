@@ -36,6 +36,11 @@ class ClassificationDiagnosticsTest {
     @Test
     fun diagnoseClassification() {
         runBlocking {
+            org.junit.Assume.assumeTrue(
+                "Benchmark opt-in required (MAZOVIA_RUN_ROUTE_BENCHMARK=1)",
+                System.getenv("MAZOVIA_RUN_ROUTE_BENCHMARK") == "1"
+            )
+            
             val envPath = System.getenv("MAZOVIA_GRAPH_PATH")
             val fallbackPath = File(System.getProperty("user.home"), "Desktop/MazoviaOffroad3/graph-cache-enduro-maz-lub").absolutePath
             val graphPath = envPath ?: fallbackPath
