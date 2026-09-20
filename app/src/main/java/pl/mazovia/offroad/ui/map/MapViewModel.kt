@@ -50,9 +50,11 @@ class MapViewModel(
 
     private val _centerRequests = MutableStateFlow(0L)
     val centerRequests: StateFlow<Long> = _centerRequests.asStateFlow()
-    
+
     private var locationJob: Job? = null
     private var searchJob: Job? = null
+    private var routeCalculationJob: Job? = null
+    private val requestGeneration = java.util.concurrent.atomic.AtomicInteger(0)
     private var hasAutoCentered = false
 
     init {
@@ -88,9 +90,9 @@ class MapViewModel(
 
     fun updateSearchQuery(query: String) {
         _uiState.update { it.copy(searchQuery = query) }
-        
+
         searchJob?.cancel()
-        
+
         val normalizedLen = pl.mazovia.offroad.domain.model.StringNormalization.normalizeForSearch(query).length
         if (normalizedLen < 3) {
             _uiState.update { it.copy(searchResults = emptyList(), isSearching = false) }
@@ -105,9 +107,9 @@ class MapViewModel(
 
     private suspend fun performSearch(query: String) {
         _uiState.update { it.copy(isSearching = true) }
-        
+
         val anchor = _uiState.value.currentPosition ?: GeoPoint.WARSAW
-        
+
         try {
             val results = placeSearchRepository.searchPlaces(query, anchor)
             _uiState.update { it.copy(searchResults = results, isSearching = false) }
@@ -126,6 +128,8 @@ class MapViewModel(
     }
 
     fun clearDestination() {
+        requestGeneration.incrementAndGet()
+        routeCalculationJob?.cancel()
         _uiState.update {
             it.copy(
                 destination = null,
@@ -134,7 +138,8 @@ class MapViewModel(
                 routeMetrics = null,
                 showRoutePanel = false,
                 calculatedRoute = null,
-                searchQuery = ""
+                searchQuery = "",
+                isLoading = false
             )
         }
     }
@@ -146,7 +151,7 @@ class MapViewModel(
 
     fun startNavigation() {
         val route = _uiState.value.calculatedRoute ?: return
-        
+
         if (_uiState.value.currentPosition == null) {
             _uiState.update { it.copy(error = "Brak sygnału GPS. Poczekaj na ustalenie lokalizacji.") }
             return
@@ -156,20 +161,20 @@ class MapViewModel(
             _uiState.update { it.copy(error = "Brak uprawnień do lokalizacji.") }
             return
         }
-        
+
         try {
             android.util.Log.d("RideLifecycle", "START_NAVIGATION")
-            
+
             // 1. Start NavigationManager
             navigationManager.startNavigation(route)
-            
+
             // 2. Start TrackRecordingService
             val intent = android.content.Intent(application, pl.mazovia.offroad.service.TrackRecordingService::class.java).apply {
                 action = pl.mazovia.offroad.service.TrackRecordingService.ACTION_START
             }
             androidx.core.content.ContextCompat.startForegroundService(application, intent)
             android.util.Log.d("RideLifecycle", "TRACK_RECORDING_SERVICE_START")
-            
+
             // 3. Switch AppMode to RIDING
             appModeManager.switchToRiding()
         } catch (e: Exception) {
@@ -200,14 +205,22 @@ class MapViewModel(
         val destination = _uiState.value.destination ?: return
         val origin = _uiState.value.currentPosition ?: GeoPoint.WARSAW
 
+        val currentGen = requestGeneration.incrementAndGet()
+        routeCalculationJob?.cancel()
+
         _uiState.update { it.copy(isLoading = true, error = null) }
 
-        viewModelScope.launch {
+        routeCalculationJob = viewModelScope.launch {
             val result = routingEngine.calculateRoute(
                 origin = origin,
                 destination = destination,
                 profile = _uiState.value.selectedProfile
             )
+
+            if (requestGeneration.get() != currentGen) {
+                // Obsolete request, ignore result
+                return@launch
+            }
 
             when (result) {
                 is RoutingResult.Success -> {

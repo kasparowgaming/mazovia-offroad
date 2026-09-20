@@ -13,6 +13,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.ensureActive
 
 
 import pl.mazovia.offroad.domain.model.*
@@ -25,15 +26,32 @@ import java.util.UUID
  * Real GraphHopper routing engine implementation.
  * Targets offline local routing with memory-efficient graph access.
  */
-class GraphHopperRoutingEngine : RoutingEngine {
+open class GraphHopperRoutingEngine : RoutingEngine {
 
-    private var graphHopper: GraphHopper? = null
-    private var currentGraphPath: String? = null
-    private var lastError: String? = null
-    
+    internal interface Filesystem {
+        fun exists(file: File): Boolean
+        fun renameTo(src: File, dest: File): Boolean
+        fun deleteRecursively(file: File): Boolean
+    }
+
+    internal var fs: Filesystem = object : Filesystem {
+        override fun exists(file: File) = file.exists()
+        override fun renameTo(src: File, dest: File) = src.renameTo(dest)
+        override fun deleteRecursively(file: File) = file.deleteRecursively()
+    }
+
+    private data class EngineState(
+        val graphHopper: GraphHopper? = null,
+        val currentGraphPath: String? = null,
+        val lastError: String? = null
+    )
+
+    @Volatile
+    private var engineState = EngineState()
+
     // Safety mutex to ensure graph swapping/unloading does not race with active routing
     private val engineMutex = Mutex()
-    
+
     // Visible for testing / benchmarking
     internal var benchmarkListener: BenchmarkListener? = null
 
@@ -42,35 +60,38 @@ class GraphHopperRoutingEngine : RoutingEngine {
         fun onTournamentStarted(baselineDistance: Double, limitPercent: Double, candidateCount: Int)
         fun onTournamentFinished(winner: Route?)
     }
-    
-    
 
 
-    override suspend fun isReady(): Boolean = graphHopper != null
 
-    override suspend fun getState(): RoutingEngineState {
-        val gh = graphHopper
-        return if (gh != null) {
+
+    override suspend fun isReady(): Boolean = engineMutex.withLock {
+        engineState.graphHopper != null
+    }
+
+    override suspend fun getState(): RoutingEngineState = engineMutex.withLock {
+        val stateSnapshot = engineState
+        val gh = stateSnapshot.graphHopper
+        if (gh != null) {
             RoutingEngineState(
                 isGraphLoaded = true,
-                graphPath = currentGraphPath,
+                graphPath = stateSnapshot.currentGraphPath,
                 graphVersion = "GH-9.1",
                 nodeCount = gh.baseGraph.nodes.toLong(),
                 edgeCount = gh.baseGraph.edges.toLong(),
                 memoryUsageBytes = Runtime.getRuntime().totalMemory() - Runtime.getRuntime().freeMemory(),
                 supportedProfiles = RoutingProfile.entries.toList(),
-                lastError = lastError
+                lastError = stateSnapshot.lastError
             )
         } else {
             RoutingEngineState(
                 isGraphLoaded = false,
-                graphPath = currentGraphPath,
-                lastError = lastError
+                graphPath = stateSnapshot.currentGraphPath,
+                lastError = stateSnapshot.lastError
             )
         }
     }
 
-    private fun initGraphHopper(graphPath: String): GraphHopper {
+    internal open fun initGraphHopper(graphPath: String): GraphHopper {
         val graphDir = File(graphPath)
         if (!graphDir.exists()) {
             throw IllegalArgumentException("Katalog z grafem nie istnieje.")
@@ -88,13 +109,13 @@ class GraphHopperRoutingEngine : RoutingEngine {
                 .putObject("import.osm.ignored_highways", ""))
             setAllowWrites(false)
         }
-        
+
         hopper.setProfiles(
             Profile("enduro_normal").setCustomModel(buildCustomModel(RoutingProfile.BEZPIECZNY)),
             Profile("enduro_max").setCustomModel(buildCustomModel(RoutingProfile.TERENOWY)),
             Profile("enduro_extreme").setCustomModel(buildCustomModel(RoutingProfile.ODKRYWCZY))
         )
-        
+
         hopper.importOrLoad()
         return hopper
     }
@@ -168,13 +189,13 @@ class GraphHopperRoutingEngine : RoutingEngine {
         val missing = "surface == MISSING && track_type == MISSING && "
         val trMult = when (mode) { RoutingProfile.BEZPIECZNY -> "0.9"; RoutingProfile.TERENOWY -> "1.12"; RoutingProfile.ODKRYWCZY -> "1.25" }
         model.addToPriority(com.graphhopper.json.Statement.If(missing + "road_class == TRACK", com.graphhopper.json.Statement.Op.MULTIPLY, trMult))
-        
+
         val pMult = when (mode) { RoutingProfile.BEZPIECZNY -> "0.8"; RoutingProfile.TERENOWY -> "1.05"; RoutingProfile.ODKRYWCZY -> "1.15" }
         model.addToPriority(com.graphhopper.json.Statement.If(missing + "road_class == PATH", com.graphhopper.json.Statement.Op.MULTIPLY, pMult))
-        
+
         val sMult = when (mode) { RoutingProfile.BEZPIECZNY -> "1.0"; RoutingProfile.TERENOWY -> "1.02"; RoutingProfile.ODKRYWCZY -> "1.02" }
         model.addToPriority(com.graphhopper.json.Statement.If(missing + "road_class == SERVICE", com.graphhopper.json.Statement.Op.MULTIPLY, sMult))
-        
+
         model.addToPriority(com.graphhopper.json.Statement.If(missing + "road_class == UNCLASSIFIED", com.graphhopper.json.Statement.Op.MULTIPLY, "1.0"))
 
         return model
@@ -183,16 +204,19 @@ class GraphHopperRoutingEngine : RoutingEngine {
     override suspend fun loadGraph(graphPath: String): Boolean = withContext(Dispatchers.IO) {
         engineMutex.withLock {
             try {
-                unloadGraphInternal()
-                
-                val hopper = initGraphHopper(graphPath)
-                
-                graphHopper = hopper
-                currentGraphPath = graphPath
-                lastError = null
+                val newHopper = initGraphHopper(graphPath)
+                val oldState = engineState
+                engineState = EngineState(
+                    graphHopper = newHopper,
+                    currentGraphPath = graphPath,
+                    lastError = null
+                )
+                unloadGraphInternal(oldState)
                 true
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
             } catch (e: Exception) {
-                lastError = "Failed to load graph: ${e.message}"
+                engineState = engineState.copy(lastError = "Failed to load graph: ${e.message}")
                 false
             }
         }
@@ -201,49 +225,116 @@ class GraphHopperRoutingEngine : RoutingEngine {
     override suspend fun validateAndSwapGraph(tempGraphPath: String): RoutingEngine.ImportResult = withContext(Dispatchers.IO) {
         val tempDir = File(tempGraphPath)
         try {
-            // 1. Validate the temp graph outside the lock to not block routing too long
             val tempHopper = initGraphHopper(tempGraphPath)
-            tempHopper.close() // Close it immediately after validation succeeds
-            
+            tempHopper.close()
+
             engineMutex.withLock {
-                // 2. Unload active graph
-                unloadGraphInternal()
-                
-                // 3. Swap directories
                 val activeDir = File(tempDir.parentFile, "graph")
-                if (activeDir.exists()) {
-                    activeDir.deleteRecursively()
+                val backupDir = File(tempDir.parentFile, "graph_backup")
+
+                if (fs.exists(backupDir)) {
+                    return@withLock RoutingEngine.ImportResult.Error(
+                        "Refusing graph swap: graph_backup already exists"
+                    )
                 }
-                tempDir.renameTo(activeDir)
-                
-                // 4. Load the new active graph
-                val hopper = initGraphHopper(activeDir.absolutePath)
-                graphHopper = hopper
-                currentGraphPath = activeDir.absolutePath
-                lastError = null
+
+                val hadActive = fs.exists(activeDir)
+                if (hadActive && !fs.renameTo(activeDir, backupDir)) {
+                    return@withLock RoutingEngine.ImportResult.Error("Failed to backup existing graph")
+                }
+
+                if (!fs.renameTo(tempDir, activeDir)) {
+                    val restored = if (hadActive) fs.renameTo(backupDir, activeDir) else true
+                    return@withLock if (restored) {
+                        RoutingEngine.ImportResult.Error("Failed to move new graph to active directory")
+                    } else {
+                        RoutingEngine.ImportResult.Error(
+                            "CRITICAL: Failed to move new graph and failed to restore backup"
+                        )
+                    }
+                }
+
+                var newHopper: GraphHopper? = null
+                var loadFailure: Throwable? = null
+                try {
+                    newHopper = initGraphHopper(activeDir.absolutePath)
+                } catch (t: Throwable) {
+                    loadFailure = t
+                }
+
+                if (loadFailure != null) {
+                    val rollbackFailure = withContext(kotlinx.coroutines.NonCancellable) {
+                        rollbackGraphSwap(activeDir, backupDir, hadActive)
+                    }
+                    if (rollbackFailure != null) {
+                        loadFailure!!.addSuppressed(rollbackFailure)
+                    }
+                    if (loadFailure is kotlinx.coroutines.CancellationException) {
+                        throw loadFailure!!
+                    }
+                    return@withLock RoutingEngine.ImportResult.Error(
+                        rollbackFailure?.message
+                            ?: "Failed to initialize new graph: ${loadFailure!!.message}"
+                    )
+                }
+
+                val oldState = engineState
+                engineState = EngineState(
+                    graphHopper = newHopper,
+                    currentGraphPath = activeDir.absolutePath,
+                    lastError = null
+                )
+                unloadGraphInternal(oldState)
+
+                if (hadActive && !fs.deleteRecursively(backupDir)) {
+                    return@withLock RoutingEngine.ImportResult.Error(
+                        "CRITICAL: New graph is active but old backup cleanup failed"
+                    )
+                }
+                RoutingEngine.ImportResult.Success
             }
-            
-            RoutingEngine.ImportResult.Success
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                if (fs.exists(tempDir)) fs.deleteRecursively(tempDir)
+            }
+            throw e
         } catch (e: Exception) {
-            // Clean up temp dir on failure
-            if (tempDir.exists()) {
-                tempDir.deleteRecursively()
+            withContext(kotlinx.coroutines.NonCancellable) {
+                if (fs.exists(tempDir)) fs.deleteRecursively(tempDir)
             }
             RoutingEngine.ImportResult.Error(e.message ?: "Nieznany błąd podczas weryfikacji grafu.")
         }
     }
 
+    private fun rollbackGraphSwap(activeDir: File, backupDir: File, hadActive: Boolean): Throwable? {
+        if (fs.exists(activeDir) && !fs.deleteRecursively(activeDir)) {
+            return IllegalStateException("CRITICAL: failed to remove replacement graph during rollback")
+        }
+        if (hadActive) {
+            if (!fs.exists(backupDir)) {
+                return IllegalStateException("CRITICAL: graph backup is missing during rollback")
+            }
+            if (!fs.renameTo(backupDir, activeDir)) {
+                return IllegalStateException(
+                    "CRITICAL: graph load failed and backup restore failed; backup remains in graph_backup"
+                )
+            }
+        }
+        return null
+    }
+
     override suspend fun unloadGraph() = withContext(Dispatchers.IO) {
         engineMutex.withLock {
-            unloadGraphInternal()
+            val oldState = engineState
+            engineState = EngineState()
+            unloadGraphInternal(oldState)
         }
     }
 
-    private fun unloadGraphInternal() {
+    private fun unloadGraphInternal(oldState: EngineState) {
         try {
-            graphHopper?.close()
+            oldState.graphHopper?.close()
         } catch (_: Exception) {}
-        graphHopper = null
     }
 
     override suspend fun calculateRoute(
@@ -252,98 +343,103 @@ class GraphHopperRoutingEngine : RoutingEngine {
         profile: RoutingProfile,
         waypoints: List<GeoPoint>
     ): RoutingResult = withContext(Dispatchers.IO) {
-        val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
+        engineMutex.withLock {
+            val gh = engineState.graphHopper ?: return@withLock RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
 
-        // Base route calculation (not speculative)
-        val baselineResult = calculateSingleRoute(origin, destination, profile, waypoints, isSpeculative = false)
-        
-        // If there are specific waypoints or if profile is BEZPIECZNY, just return the baseline
-        if (waypoints.isNotEmpty() || profile == RoutingProfile.BEZPIECZNY) {
-            return@withContext baselineResult
-        }
+            kotlin.coroutines.coroutineContext.ensureActive()
+            // Base route calculation (not speculative)
+            val baselineResult = calculateSingleRoute(gh, origin, destination, profile, waypoints, isSpeculative = false)
+            kotlin.coroutines.coroutineContext.ensureActive()
 
-        // We only proceed with geometric alternatives if baseline succeeds
-        val baselineRoute = (baselineResult as? RoutingResult.Success)?.route ?: return@withContext baselineResult
-
-        try {
-            val corridors = RouteTournament.profileDiversityCorridors(origin, destination, profile)
-            if (corridors.isEmpty()) {
-                return@withContext baselineResult
+            // If there are specific waypoints or if profile is BEZPIECZNY, just return the baseline
+            if (waypoints.isNotEmpty() || profile == RoutingProfile.BEZPIECZNY) {
+                return@withLock baselineResult
             }
 
-            android.util.Log.e("GraphHopperDiagnostic", "Generating ${corridors.size} alternative corridors sequentially")
-            
-            val candidates = mutableListOf<Route>()
-            for (corridor in corridors) {
-                try {
-                    val result = calculateSingleRoute(origin, destination, profile, corridor, isSpeculative = true)
-                    val route = (result as? RoutingResult.Success)?.route
-                    if (route != null) {
-                        candidates.add(route)
-                    }
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    // Skip failed speculative candidate
+            // We only proceed with geometric alternatives if baseline succeeds
+            val baselineRoute = (baselineResult as? RoutingResult.Success)?.route ?: return@withLock baselineResult
+
+            try {
+                val corridors = RouteTournament.profileDiversityCorridors(origin, destination, profile)
+                if (corridors.isEmpty()) {
+                    return@withLock baselineResult
                 }
-            }
 
-            candidates.add(baselineRoute)
-            
-            android.util.Log.e("GraphHopperDiagnostic", "Tournament evaluating ${candidates.size} valid candidates")
-            val limit = RouteTournament.profileDetourLimit(profile)
-            try {
-                benchmarkListener?.onTournamentStarted(baselineRoute.totalDistanceMeters, limit, candidates.size)
-            } catch (e: Exception) {
-                android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
-            }
-            val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile)
-            try {
-                benchmarkListener?.onTournamentFinished(winner)
-            } catch (e: Exception) {
-                android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
-            }
+                android.util.Log.e("GraphHopperDiagnostic", "Generating ${corridors.size} alternative corridors sequentially")
 
-            if (winner != null) {
-                return@withContext RoutingResult.Success(winner)
+                val candidates = mutableListOf<Route>()
+                for (corridor in corridors) {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    try {
+                        val result = calculateSingleRoute(gh, origin, destination, profile, corridor, isSpeculative = true)
+                        kotlin.coroutines.coroutineContext.ensureActive()
+                        val route = (result as? RoutingResult.Success)?.route
+                        if (route != null) {
+                            candidates.add(route)
+                        }
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        // Skip failed speculative candidate
+                    }
+                }
+
+                candidates.add(baselineRoute)
+
+                android.util.Log.e("GraphHopperDiagnostic", "Tournament evaluating ${candidates.size} valid candidates")
+                val limit = RouteTournament.profileDetourLimit(profile)
+                try {
+                    benchmarkListener?.onTournamentStarted(baselineRoute.totalDistanceMeters, limit, candidates.size)
+                } catch (e: Exception) {
+                    android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
+                }
+                val winner = RouteTournament.chooseTournamentWinner(candidates, baselineRoute.totalDistanceMeters, profile)
+                try {
+                    benchmarkListener?.onTournamentFinished(winner)
+                } catch (e: Exception) {
+                    android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
+                }
+
+                if (winner != null) {
+                    return@withLock RoutingResult.Success(winner)
+                }
+                return@withLock baselineResult
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                try {
+                    benchmarkListener?.onTournamentFinished(null)
+                } catch (ignored: Exception) {}
+                android.util.Log.e("GraphHopperDiagnostic", "Tournament failed, falling back to baseline", e)
+                return@withLock baselineResult
             }
-            return@withContext baselineResult
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            try {
-                benchmarkListener?.onTournamentFinished(null)
-            } catch (ignored: Exception) {}
-            android.util.Log.e("GraphHopperDiagnostic", "Tournament failed, falling back to baseline", e)
-            return@withContext baselineResult
         }
     }
 
     private suspend fun calculateSingleRoute(
+        gh: GraphHopper,
         origin: GeoPoint,
         destination: GeoPoint,
         profile: RoutingProfile,
         waypoints: List<GeoPoint>,
         isSpeculative: Boolean = false
-    ): RoutingResult = withContext(Dispatchers.IO) {
-        val gh = graphHopper ?: return@withContext RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED)
-
+    ): RoutingResult {
         val startTime = System.nanoTime()
         var errorMsg: String? = null
         var resultRoute: Route? = null
-        
+
         val result = try {
             android.util.Log.e("GraphHopperDiagnostic", "ROUTE_CALCULATION_START")
             val profileName = profile.toGraphHopperProfile()
             android.util.Log.e("GraphHopperDiagnostic", "PROFILE_SELECTED: " + profileName)
-            
+
             val request = GHRequest().apply {
                 addPoint(com.graphhopper.util.shapes.GHPoint(origin.latitude, origin.longitude))
                 waypoints.forEach { wp ->
                     addPoint(com.graphhopper.util.shapes.GHPoint(wp.latitude, wp.longitude))
                 }
                 addPoint(com.graphhopper.util.shapes.GHPoint(destination.latitude, destination.longitude))
-                
+
                 this.profile = profileName
                 this.locale = java.util.Locale("pl")
                 putHint(Parameters.Routing.INSTRUCTIONS, true)
@@ -353,19 +449,19 @@ class GraphHopperRoutingEngine : RoutingEngine {
             android.util.Log.e("GraphHopperDiagnostic", "GHREQUEST_CREATED")
 
             android.util.Log.e("GraphHopperDiagnostic", "HOPPER_ROUTE_START")
-            
-            val response = engineMutex.withLock {
-                gh.route(request)
-            }
-            
+
+            val response = gh.route(request)
+
             android.util.Log.e("GraphHopperDiagnostic", "HOPPER_ROUTE_RETURNED")
+
+            kotlin.coroutines.coroutineContext.ensureActive() // ensure active immediately after gh returns
 
             if (response.hasErrors()) {
                 val err = response.errors.joinToString { it.message ?: "Unknown error" }
                 errorMsg = err
                 android.util.Log.e("GraphHopperDiagnostic", "ROUTE ERROR: " + err)
                 if (!isSpeculative) {
-                    lastError = err
+                    engineState = engineState.copy(lastError = err)
                 }
                 when {
                     err.contains("Cannot find point", ignoreCase = true) ->
@@ -378,14 +474,14 @@ class GraphHopperRoutingEngine : RoutingEngine {
 
                 android.util.Log.e("GraphHopperDiagnostic", "RESPONSE_PATH_COUNT: " + response.all.size)
                 val best = response.best
-                
+
                 android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_START")
                 val route = convertToRoute(best, origin, destination, profile, stripSyntheticWaypoints = isSpeculative)
                 android.util.Log.e("GraphHopperDiagnostic", "ROUTE_EXTRACTION_DONE")
-                
+
                 android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_START")
                 android.util.Log.e("GraphHopperDiagnostic", "ROUTE_METRICS_DONE")
-                
+
                 resultRoute = route
                 RoutingResult.Success(route)
             }
@@ -394,23 +490,23 @@ class GraphHopperRoutingEngine : RoutingEngine {
         } catch (e: OutOfMemoryError) {
             android.util.Log.e("GraphHopperDiagnostic", "OOM in calculateSingleRoute", e)
             errorMsg = "OOM: ${e.message}"
-            if (!isSpeculative) lastError = errorMsg
+            if (!isSpeculative) engineState = engineState.copy(lastError = errorMsg)
             RoutingResult.Error(RoutingError.MEMORY_ERROR)
         } catch (e: Exception) {
             android.util.Log.e("GraphHopperDiagnostic", "FATAL EXCEPTION in calculateSingleRoute", e)
             errorMsg = "Exception: ${e.message}"
-            if (!isSpeculative) lastError = "Routing error: " + e.message
+            if (!isSpeculative) engineState = engineState.copy(lastError = "Routing error: " + e.message)
             RoutingResult.Error(RoutingError.CALCULATION_ERROR)
         }
-        
+
         val elapsedMs = (System.nanoTime() - startTime) / 1_000_000
         try {
             benchmarkListener?.onCandidateEvaluated(resultRoute, !isSpeculative, profile, elapsedMs, errorMsg)
         } catch (e: Exception) {
             android.util.Log.e("GraphHopperDiagnostic", "BenchmarkListener failed", e)
         }
-        
-        result
+
+        return result
     }
 
     override suspend fun calculateAlternatives(
@@ -419,42 +515,45 @@ class GraphHopperRoutingEngine : RoutingEngine {
         profile: RoutingProfile,
         maxAlternatives: Int
     ): List<RoutingResult> = withContext(Dispatchers.IO) {
-        val gh = graphHopper ?: return@withContext listOf(RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED))
+        engineMutex.withLock {
+            val gh = engineState.graphHopper ?: return@withLock listOf(RoutingResult.Error(RoutingError.GRAPH_NOT_LOADED))
 
-        try {
-            val profileName = profile.toGraphHopperProfile()
-            val request = GHRequest(
-                origin.latitude, origin.longitude,
-                destination.latitude, destination.longitude
-            ).apply {
-                this.profile = profileName
-                putHint(Parameters.Routing.INSTRUCTIONS, true)
-                this.setPathDetails(listOf("surface", "road_class", "track_type"))
-                setAlgorithm(Parameters.Algorithms.ALT_ROUTE)
-                putHint("alternative_route.max_paths", maxAlternatives)
-                putHint("alternative_route.max_share", 0.6)
-                putHint("ch.disable", true)
-            }
+            kotlin.coroutines.coroutineContext.ensureActive()
 
-            val response = engineMutex.withLock {
-                gh.route(request)
+            try {
+                val profileName = profile.toGraphHopperProfile()
+                val request = GHRequest(
+                    origin.latitude, origin.longitude,
+                    destination.latitude, destination.longitude
+                ).apply {
+                    this.profile = profileName
+                    putHint(Parameters.Routing.INSTRUCTIONS, true)
+                    this.setPathDetails(listOf("surface", "road_class", "track_type"))
+                    setAlgorithm(Parameters.Algorithms.ALT_ROUTE)
+                    putHint("alternative_route.max_paths", maxAlternatives)
+                    putHint("alternative_route.max_share", 0.6)
+                    putHint("ch.disable", true)
+                }
+
+                val response = gh.route(request)
+                kotlin.coroutines.coroutineContext.ensureActive()
+
+                if (response.hasErrors()) {
+                    val errorMsg = response.errors.firstOrNull()?.message ?: "Unknown error"
+                    engineState = engineState.copy(lastError = errorMsg)
+                    return@withLock listOf(RoutingResult.Error(RoutingError.NO_ROUTE_FOUND))
+                }
+
+                response.all.map { path ->
+                    val route = convertToRoute(path, origin, destination, profile)
+                    RoutingResult.Success(route)
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                engineState = engineState.copy(lastError = "Alternatives error: ${e.message}")
+                listOf(RoutingResult.Error(RoutingError.CALCULATION_ERROR))
             }
-            
-            if (response.hasErrors()) {
-                val errorMsg = response.errors.firstOrNull()?.message ?: "Unknown error"
-                lastError = errorMsg
-                return@withContext listOf(RoutingResult.Error(RoutingError.NO_ROUTE_FOUND))
-            }
-            
-            response.all.map { path ->
-                val route = convertToRoute(path, origin, destination, profile)
-                RoutingResult.Success(route)
-            }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            lastError = "Alternatives error: ${e.message}"
-            listOf(RoutingResult.Error(RoutingError.CALCULATION_ERROR))
         }
     }
 
@@ -462,7 +561,7 @@ class GraphHopperRoutingEngine : RoutingEngine {
         params: LoopParameters,
         candidateCount: Int
     ): List<LoopCandidate> = withContext(Dispatchers.IO) {
-        val gh = graphHopper ?: return@withContext emptyList()
+        val gh = engineState.graphHopper ?: return@withContext emptyList()
 
         val candidates = mutableListOf<LoopCandidate>()
         val targetDistanceM = params.targetDistanceKm * 1000.0
@@ -540,7 +639,7 @@ class GraphHopperRoutingEngine : RoutingEngine {
         // Extract segments with surface information from path details
         val segments = extractSegments(path, points)
         val metrics = RouteMetrics.fromSegments(segments)
-        
+
         var maneuvers = extractManeuvers(path)
         if (stripSyntheticWaypoints) {
             maneuvers = maneuvers.filter { it.type != ManeuverType.WAYPOINT }
@@ -557,7 +656,7 @@ class GraphHopperRoutingEngine : RoutingEngine {
         )
     }
 
-    private fun extractSegments(path: ResponsePath, allPoints: List<GeoPoint>): List<RouteSegment> {
+    internal fun extractSegments(path: ResponsePath, allPoints: List<GeoPoint>): List<RouteSegment> {
         if (allPoints.size < 2) return emptyList()
 
         val segments = mutableListOf<RouteSegment>()
@@ -566,92 +665,74 @@ class GraphHopperRoutingEngine : RoutingEngine {
         val isDiagnostic = path.distance > 0 && path.distance < 20000 && allPoints.size > 10 // roughly matching the diagnostic route
         var shouldDiagnose = false
 
-        // Try to get surface details from GraphHopper
         val surfaceDetails = pathDetails["surface"]
         val roadClassDetails = pathDetails["road_class"]
         val trackTypeDetails = pathDetails["track_type"]
-        
+
         if (System.getProperty("MAZOVIA_DIAGNOSE_GH") == "true") {
             shouldDiagnose = true
             println("=== GH PATH DETAILS DUMP ===")
             println("- contains surface: ${surfaceDetails != null}")
             println("- contains road_class: ${roadClassDetails != null}")
             println("- contains track_type: ${trackTypeDetails != null}")
-            
-            println("- surface ranges count: ${surfaceDetails?.size}")
-            println("- road_class ranges count: ${roadClassDetails?.size}")
-            println("- track_type ranges count: ${trackTypeDetails?.size}")
-            
-            println("- unique surface values: ${surfaceDetails?.map { it.value?.toString() }?.toSet()}")
-            println("- unique road_class values: ${roadClassDetails?.map { it.value?.toString() }?.toSet()}")
-            println("- unique track_type values: ${trackTypeDetails?.map { it.value?.toString() }?.toSet()}")
-            
-            println("\n- first 20 surface ranges:")
-            surfaceDetails?.take(20)?.forEach { 
-                println("  [${it.first}..${it.last}]: ${it.value}") 
-            }
-            
-            println("\n- first 20 road_class ranges:")
-            roadClassDetails?.take(20)?.forEach { 
-                println("  [${it.first}..${it.last}]: ${it.value}") 
-            }
-            
-            println("\n- first 20 track_type ranges:")
-            trackTypeDetails?.take(20)?.forEach { 
-                println("  [${it.first}..${it.last}]: ${it.value}") 
+        }
+
+        // Collect all unique boundaries
+        val boundaries = java.util.TreeSet<Int>()
+        surfaceDetails?.forEach { boundaries.add(it.first as Int); boundaries.add(it.last as Int) }
+        roadClassDetails?.forEach { boundaries.add(it.first as Int); boundaries.add(it.last as Int) }
+        trackTypeDetails?.forEach { boundaries.add(it.first as Int); boundaries.add(it.last as Int) }
+        boundaries.add(0)
+        boundaries.add(allPoints.size - 1)
+
+        val sortedBoundaries = boundaries.toList()
+
+        for (i in 0 until sortedBoundaries.size - 1) {
+            val fromIdx = sortedBoundaries[i].coerceIn(0, allPoints.size - 1)
+            val toIdx = sortedBoundaries[i + 1].coerceIn(1, allPoints.size - 1)
+
+            if (fromIdx >= toIdx) continue
+
+            val segPoints = allPoints.subList(fromIdx, toIdx + 1)
+
+            if (segPoints.size >= 2) {
+                val distance = segPoints.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
+
+                val rawSurface = surfaceDetails?.find { (it.first as Int) <= fromIdx && fromIdx < (it.last as Int) }?.value?.toString()
+                val rawRc = roadClassDetails?.find { (it.first as Int) <= fromIdx && fromIdx < (it.last as Int) }?.value?.toString()
+                val rawTt = trackTypeDetails?.find { (it.first as Int) <= fromIdx && fromIdx < (it.last as Int) }?.value?.toString()
+
+                val surfaceTag = if (rawSurface.equals("missing", ignoreCase = true)) null else rawSurface
+                val surface = Surface.fromOsmTag(surfaceTag)
+
+                val rcTag = if (rawRc.equals("missing", ignoreCase = true)) null else rawRc
+                val highway = HighwayType.fromOsmTag(rcTag)
+
+                val ttTag = if (rawTt.equals("missing", ignoreCase = true)) null else rawTt
+                val trackType = TrackType.fromOsmTag(ttTag)
+
+                segments.add(
+                    RouteSegment(
+                        points = segPoints,
+                        distanceMeters = distance,
+                        surface = surface,
+                        highway = highway,
+                        trackType = trackType,
+                        dataConfidence = if (surfaceTag != null || rcTag != null) DataConfidence.CONFIRMED else DataConfidence.UNKNOWN
+                    )
+                )
             }
         }
 
-        if (surfaceDetails != null && surfaceDetails.isNotEmpty()) {
-            for (detail in surfaceDetails) {
-                val fromIdx = detail.first as Int
-                val toIdx = detail.last as Int
-                val surfaceTag = detail.value?.toString()
-
-                val segPoints = allPoints.subList(
-                    fromIdx.coerceIn(0, allPoints.size - 1),
-                    (toIdx + 1).coerceIn(1, allPoints.size)
-                )
-
-                if (segPoints.size >= 2) {
-                    val distance = segPoints.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
-                    val surface = Surface.fromOsmTag(surfaceTag)
-                    
-                    val rcTag = roadClassDetails?.find { fromIdx >= (it.first as Int) && fromIdx < (it.last as Int) }?.value?.toString()
-                    val highway = HighwayType.fromOsmTag(rcTag)
-                    
-                    val ttTag = trackTypeDetails?.find { fromIdx >= (it.first as Int) && fromIdx < (it.last as Int) }?.value?.toString()
-                    val trackType = TrackType.fromOsmTag(ttTag)
-
-                    segments.add(
-                        RouteSegment(
-                            points = segPoints,
-                            distanceMeters = distance,
-                            surface = surface,
-                            highway = highway,
-                            trackType = trackType,
-                            dataConfidence = if (surfaceTag != null || rcTag != null) DataConfidence.CONFIRMED
-                            else DataConfidence.UNKNOWN
-                        )
-                    )
-                }
-            }
-        } else {
-            // Fallback: single segment with unknown surface
+        if (segments.isEmpty()) {
             val distance = allPoints.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
-            val rcTag = roadClassDetails?.firstOrNull()?.value?.toString()
-            val highway = HighwayType.fromOsmTag(rcTag)
-            
-            val ttTag = trackTypeDetails?.firstOrNull()?.value?.toString()
-            val trackType = TrackType.fromOsmTag(ttTag)
-            
             segments.add(
                 RouteSegment(
                     points = allPoints,
                     distanceMeters = distance,
                     surface = Surface.UNKNOWN,
-                    highway = highway,
-                    trackType = trackType,
+                    highway = HighwayType.UNKNOWN,
+                    trackType = TrackType.UNKNOWN,
                     dataConfidence = DataConfidence.UNKNOWN
                 )
             )
