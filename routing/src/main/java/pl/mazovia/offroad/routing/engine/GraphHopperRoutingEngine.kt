@@ -238,47 +238,51 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                     )
                 }
 
-                val hadActive = fs.exists(activeDir)
-                if (hadActive && !fs.renameTo(activeDir, backupDir)) {
-                    return@withLock RoutingEngine.ImportResult.Error("Failed to backup existing graph")
-                }
-
-                if (!fs.renameTo(tempDir, activeDir)) {
-                    val restored = if (hadActive) fs.renameTo(backupDir, activeDir) else true
-                    return@withLock if (restored) {
-                        RoutingEngine.ImportResult.Error("Failed to move new graph to active directory")
-                    } else {
-                        RoutingEngine.ImportResult.Error(
-                            "CRITICAL: Failed to move new graph and failed to restore backup"
-                        )
-                    }
-                }
-
-                var newHopper: GraphHopper? = null
-                var loadFailure: Throwable? = null
-                try {
-                    newHopper = initGraphHopper(activeDir.absolutePath)
-                } catch (t: Throwable) {
-                    loadFailure = t
-                }
-
-                if (loadFailure != null) {
-                    val rollbackFailure = withContext(kotlinx.coroutines.NonCancellable) {
-                        rollbackGraphSwap(activeDir, backupDir, hadActive)
-                    }
-                    if (rollbackFailure != null) {
-                        loadFailure!!.addSuppressed(rollbackFailure)
-                    }
-                    if (loadFailure is kotlinx.coroutines.CancellationException) {
-                        throw loadFailure!!
-                    }
-                    return@withLock RoutingEngine.ImportResult.Error(
-                        rollbackFailure?.message
-                            ?: "Failed to initialize new graph: ${loadFailure!!.message}"
-                    )
-                }
-
                 val oldState = engineState
+                val hadActive = fs.exists(activeDir)
+                var backedUp = false
+                var installed = false
+                var newHopper: GraphHopper? = null
+                try {
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    if (hadActive) {
+                        check(fs.renameTo(activeDir, backupDir)) { "Failed to backup existing graph" }
+                        backedUp = true
+                    }
+                    check(fs.renameTo(tempDir, activeDir)) { "Failed to move new graph to active directory" }
+                    installed = true
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                    newHopper = initGraphHopper(activeDir.absolutePath)
+                    // Synchronous initialization may return normally after cancellation.
+                    // This is the last cancellation boundary before committing the swap.
+                    kotlin.coroutines.coroutineContext.ensureActive()
+                } catch (failure: Throwable) {
+                    val rollbackFailure = withContext(kotlinx.coroutines.NonCancellable) {
+                        try {
+                            newHopper?.close()
+                        } catch (closeFailure: Throwable) {
+                            failure.addSuppressed(closeFailure)
+                        }
+                        try {
+                            rollbackGraphSwap(activeDir, backupDir, backedUp, installed)
+                        } catch (rollbackError: Throwable) {
+                            IllegalStateException("CRITICAL: graph rollback failed", rollbackError)
+                        }
+                    }
+                    engineState = oldState.copy(
+                        // The old RAM graph remains usable, but its disk location is
+                        // no longer guaranteed after an unsuccessful rollback.
+                        currentGraphPath = if (rollbackFailure == null) oldState.currentGraphPath else null,
+                        lastError = rollbackFailure?.message ?: "Graph swap failed: ${failure.message}"
+                    )
+                    if (rollbackFailure != null) {
+                        failure.addSuppressed(rollbackFailure)
+                    }
+                    if (failure is CancellationException) throw failure
+                    if (failure !is Exception) throw failure
+                    return@withLock RoutingEngine.ImportResult.Error(engineState.lastError!!)
+                }
+
                 engineState = EngineState(
                     graphHopper = newHopper,
                     currentGraphPath = activeDir.absolutePath,
@@ -287,9 +291,10 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                 unloadGraphInternal(oldState)
 
                 if (hadActive && !fs.deleteRecursively(backupDir)) {
-                    return@withLock RoutingEngine.ImportResult.Error(
-                        "CRITICAL: New graph is active but old backup cleanup failed"
+                    engineState = engineState.copy(
+                        lastError = "CRITICAL: New graph is active but old backup cleanup failed"
                     )
+                    return@withLock RoutingEngine.ImportResult.Error(engineState.lastError!!)
                 }
                 RoutingEngine.ImportResult.Success
             }
@@ -306,11 +311,11 @@ open class GraphHopperRoutingEngine : RoutingEngine {
         }
     }
 
-    private fun rollbackGraphSwap(activeDir: File, backupDir: File, hadActive: Boolean): Throwable? {
-        if (fs.exists(activeDir) && !fs.deleteRecursively(activeDir)) {
+    private fun rollbackGraphSwap(activeDir: File, backupDir: File, backedUp: Boolean, installed: Boolean): Throwable? {
+        if (installed && fs.exists(activeDir) && !fs.deleteRecursively(activeDir)) {
             return IllegalStateException("CRITICAL: failed to remove replacement graph during rollback")
         }
-        if (hadActive) {
+        if (backedUp) {
             if (!fs.exists(backupDir)) {
                 return IllegalStateException("CRITICAL: graph backup is missing during rollback")
             }

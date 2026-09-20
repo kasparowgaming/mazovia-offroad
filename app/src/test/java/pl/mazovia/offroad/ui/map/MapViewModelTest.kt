@@ -4,6 +4,9 @@ import io.mockk.mockk
 import android.app.Application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -38,6 +41,7 @@ class MapViewModelTest {
 
     class AdversarialRoutingEngine : RoutingEngine {
         val requests = mutableListOf<kotlinx.coroutines.CompletableDeferred<RoutingResult>>()
+        val cancelledCompletions = mutableListOf<kotlinx.coroutines.CompletableDeferred<RoutingResult>>()
         var lastRequestedProfile: RoutingProfile? = null
 
         override suspend fun isReady(): Boolean = true
@@ -60,7 +64,9 @@ class MapViewModelTest {
             lastRequestedProfile = profile
             val deferred = kotlinx.coroutines.CompletableDeferred<RoutingResult>()
             requests.add(deferred)
-            return deferred.await()
+            val result = withContext(NonCancellable) { deferred.await() }
+            if (!kotlin.coroutines.coroutineContext.isActive) cancelledCompletions.add(deferred)
+            return result
         }
 
         fun createRoute(distance: Double, profile: RoutingProfile = RoutingProfile.TERENOWY): RoutingResult.Success {
@@ -108,6 +114,7 @@ class MapViewModelTest {
         reqA.complete(engine.createRoute(1.0))
         runCurrent()
 
+        assertTrue(engine.cancelledCompletions.contains(reqA))
         assertEquals(2.0, viewModel.uiState.value.calculatedRoute?.totalDistanceMeters)
     }
 
@@ -126,7 +133,10 @@ class MapViewModelTest {
         reqA.complete(engine.createRoute(1.0))
         runCurrent()
 
+        assertTrue(engine.cancelledCompletions.contains(reqA))
         assertNull(viewModel.uiState.value.calculatedRoute)
+        assertNull(viewModel.uiState.value.destination)
+        assertFalse(viewModel.uiState.value.isLoading)
     }
 
     @Test
@@ -134,13 +144,16 @@ class MapViewModelTest {
         val engine = AdversarialRoutingEngine()
         val viewModel = createViewModel(engine)
 
+        viewModel.selectProfile(RoutingProfile.TERENOWY)
         viewModel.setDestination(GeoPoint(1.0, 1.0))
         runCurrent()
         val reqA = engine.requests[0]
+        assertEquals(RoutingProfile.TERENOWY, engine.lastRequestedProfile)
 
         viewModel.selectProfile(RoutingProfile.ODKRYWCZY)
         runCurrent()
         val reqB = engine.requests[1]
+        assertEquals(RoutingProfile.ODKRYWCZY, engine.lastRequestedProfile)
 
         reqB.complete(engine.createRoute(2.0, RoutingProfile.ODKRYWCZY))
         runCurrent()
@@ -148,6 +161,7 @@ class MapViewModelTest {
         reqA.complete(engine.createRoute(1.0, RoutingProfile.TERENOWY))
         runCurrent()
 
+        assertTrue(engine.cancelledCompletions.contains(reqA))
         assertEquals(RoutingProfile.ODKRYWCZY, viewModel.uiState.value.calculatedRoute?.profile)
     }
 
@@ -168,7 +182,11 @@ class MapViewModelTest {
         reqA.complete(RoutingResult.Error(RoutingError.CALCULATION_ERROR))
         runCurrent()
 
+        assertTrue(engine.cancelledCompletions.contains(reqA))
         assertTrue(viewModel.uiState.value.isLoading)
         assertNull(viewModel.uiState.value.error)
+        engine.requests[1].complete(engine.createRoute(2.0))
+        runCurrent()
+        assertFalse(viewModel.uiState.value.isLoading)
     }
 }
