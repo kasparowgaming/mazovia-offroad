@@ -575,8 +575,7 @@ open class GraphHopperRoutingEngine : RoutingEngine {
         candidateCount: Int
     ): List<LoopCandidate> = withContext(Dispatchers.IO) {
         if (engineState.graphHopper == null || params.targetDistanceKm <= 0 || candidateCount <= 0) return@withContext emptyList()
-        val attempts = LoopPlanner.shapes(params.startPoint, params.targetDistanceKm, params.preferredDirection)
-            .map { shape ->
+        suspend fun attempt(shapes: List<LoopPlanner.Shape>) = shapes.map { shape ->
                 kotlin.coroutines.coroutineContext.ensureActive()
                 try {
                     when (val result = calculateRoute(params.startPoint, params.startPoint,
@@ -590,7 +589,15 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                     LoopPlanner.Attempt(shape, null, "ROUTING_FAILURE: ${e.message}")
                 }
             }
-        val decisions = LoopPlanner.select(attempts, params.targetDistanceKm, candidateCount)
+        val attempts = attempt(LoopPlanner.shapes(params.startPoint, params.targetDistanceKm, params.preferredDirection))
+        var decisions = LoopPlanner.select(attempts, params.targetDistanceKm, candidateCount)
+        // Only recover when the original bounded search has no acceptable geometry. In
+        // particular, an existing long-loop fallback keeps its original route and distance.
+        if (decisions.none { it.status == "SELECTED" || it.status == "SELECTED_FALLBACK" }) {
+            val recovery = attempt(LoopPlanner.shapes(params.startPoint, params.targetDistanceKm,
+                params.preferredDirection, recovery = true))
+            decisions = LoopPlanner.select(attempts + recovery, params.targetDistanceKm, candidateCount)
+        }
         decisions.forEach { decision ->
             val selected = decision.status == "SELECTED" || decision.status == "SELECTED_FALLBACK"
             observe(benchmarkListener) { it.onLoopAttempt(decision.shape.id, decision.shape.description,
@@ -600,6 +607,8 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                 "error=${decision.candidate?.score?.targetDistanceError} terrainMeters=${decision.candidate?.route?.metrics?.offRoadDistanceMeters} " +
                 "terrainPercent=${decision.candidate?.route?.metrics?.offRoadPercentage} longestTerrainMeters=${decision.candidate?.route?.metrics?.longestContinuousTerrainMeters} " +
                 "retraceMeters=${decision.candidate?.retraceDistanceMeters} retraceRatio=${decision.candidate?.score?.retraceFraction} " +
+                "localSpikeDistanceMeters=${decision.candidate?.localSpikeDistanceMeters} localSpikeRatio=${decision.candidate?.localSpikeRatio} " +
+                "spikeRejected=${decision.candidate?.spikeRejected} spikeWaypointIndex=${decision.candidate?.spikeWaypointIndex} " +
                 "status=${decision.status} selected=$selected")
         }
         val selectedIds = decisions.filter { it.status == "SELECTED" || it.status == "SELECTED_FALLBACK" }

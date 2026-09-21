@@ -31,6 +31,10 @@ class LoopPlannerTest {
             assertEquals(18, shapes.size)
             assertTrue(shapes.all { it.waypoints.size == 2 && it.waypoints.all { p -> p != start } })
             assertEquals(18, shapes.map { it.id }.distinct().size)
+            val recovery = LoopPlanner.shapes(start, target, null, recovery = true)
+            assertEquals(6, recovery.size)
+            assertEquals(24, (shapes + recovery).map { it.id }.distinct().size)
+            assertEquals(recovery, LoopPlanner.shapes(start, target, null, recovery = true))
         }
     }
 
@@ -62,6 +66,45 @@ class LoopPlannerTest {
         val crossing = route("cross", listOf(start, point(3000.0, 3000.0), point(0.0, 3000.0),
             point(3000.0, 0.0), start), 20_000.0)
         assertTrue(LoopPlanner.retraceMeters(crossing) < 500.0)
+        assertEquals(0.0, LoopPlanner.localSpike(crossing, emptyList()).distanceMeters, 0.0)
+    }
+
+    private fun spiked(length: Double, noise: Double = 0.0) = route("spiked", listOf(start,
+        point(5000.0, 0.0), point(5000.0 + length, 0.0), point(5000.0, noise),
+        point(5000.0, 5000.0), point(0.0, 5000.0), start), 50_000.0)
+
+    @Test fun `immediate reverse overlap tolerates coordinate noise and vertex segmentation`() {
+        for (noise in listOf(0.0, 2.0, 5.0)) {
+            val route = spiked(2000.0, noise)
+            assertEquals(2000.0, LoopPlanner.localSpike(route, emptyList()).distanceMeters, 24.0)
+            val reversed = route.copy(segments = route.segments.map { it.copy(points = it.points.reversed()) })
+            assertEquals(2000.0, LoopPlanner.localSpike(reversed, emptyList()).distanceMeters, 24.0)
+        }
+        val segmented = route("segmented", listOf(start, point(5000.0, 0.0), point(7000.0, 0.0),
+            point(6600.0, 2.0), point(5900.0, -2.0), point(5000.0, 0.0),
+            point(5000.0, 5000.0), point(0.0, 5000.0), start), 50_000.0)
+        assertEquals(2000.0, LoopPlanner.localSpike(segmented, emptyList()).distanceMeters, 24.0)
+    }
+
+    @Test fun `distributed short overlap differs from one concentrated spike`() {
+        val points = mutableListOf(start)
+        for (i in 1..10) {
+            val x = i * 500.0
+            points.add(point(x, 0.0))
+            points.add(point(x, -200.0))
+            points.add(point(x, 0.0))
+        }
+        points.addAll(listOf(point(5000.0, 5000.0), point(0.0, 5000.0), start))
+        val distributed = route("distributed", points, 50_000.0)
+        assertEquals(LoopPlanner.retraceMeters(spiked(2000.0)), LoopPlanner.retraceMeters(distributed), 150.0)
+        assertTrue(LoopPlanner.localSpike(distributed, emptyList()).distanceMeters < 240.0)
+        assertTrue(LoopPlanner.localSpike(spiked(2000.0), emptyList()).distanceMeters > 1900.0)
+    }
+
+    @Test fun `common start and end access stem is not an interior turnback`() {
+        val access = route("access", listOf(start, point(200.0, 0.0), point(3000.0, 0.0),
+            point(3000.0, 3000.0), point(200.0, 3000.0), point(200.0, 0.0), start), 50_000.0)
+        assertEquals(0.0, LoopPlanner.localSpike(access, emptyList()).distanceMeters, 0.0)
     }
 
     @Test fun `low retrace fallback beats a primary distance inflated by repeated roads`() {
@@ -71,7 +114,7 @@ class LoopPlannerTest {
         val decisions = LoopPlanner.select(listOf(attempt("repeated", repeated),
             attempt("clean", clean)), 50, 1)
         assertTrue(LoopPlanner.retraceMeters(repeated) / repeated.totalDistanceMeters in 0.10..0.20)
-        assertEquals("NOT_SELECTED", decisions[0].status)
+        assertEquals("LOCAL_WAYPOINT_SPIKE", decisions[0].status)
         assertEquals("SELECTED_FALLBACK", decisions[1].status)
     }
 
@@ -84,5 +127,35 @@ class LoopPlannerTest {
         assertEquals("SELECTED", first[1].status)
         assertEquals("DUPLICATE", first[2].status)
         assertEquals(first.map { it.status }, LoopPlanner.select(attempts, 50, 2).map { it.status })
+    }
+
+    @Test fun `large local spike below global ten percent cannot beat clean terrain poorer loop`() {
+        val bad = spiked(2000.0).let { it.copy(metrics = it.metrics.copy(offRoadDistanceMeters = 49_000.0)) }
+        assertTrue(LoopPlanner.retraceMeters(bad) / bad.totalDistanceMeters < 0.10)
+        val attempts = listOf(attempt("bad", bad), attempt("clean", route("clean", square(8000.0), 52_000.0)))
+        repeat(3) {
+            val decisions = LoopPlanner.select(attempts, 50, 1)
+            assertEquals("LOCAL_WAYPOINT_SPIKE", decisions[0].status)
+            assertTrue(decisions[0].candidate!!.spikeRejected)
+            assertEquals("SELECTED", decisions[1].status)
+        }
+    }
+
+    @Test fun `short overlaps and measured good long loop fixtures remain acceptable`() {
+        assertFalse(LoopPlanner.spikeRejected(300.0, 10_000.0))
+        assertTrue(LoopPlanner.spikeRejected(1008.0, 21_563.924))
+        for (name in listOf("100-terenowy", "100-odkrywczy", "150-terenowy", "150-odkrywczy")) {
+            val lines = javaClass.getResourceAsStream("/loop-fixtures/$name.txt")!!.bufferedReader().use { it.readLines() }
+            val distance = lines.first().toDouble()
+            val points = lines.drop(1).map { line ->
+                val values = line.split(' ')
+                GeoPoint(values[0].toDouble(), values[1].toDouble())
+            }
+            val fixture = route(name, points, distance)
+            val spike = LoopPlanner.localSpike(fixture, emptyList())
+            assertFalse("$name spike=${spike.distanceMeters}", LoopPlanner.spikeRejected(spike.distanceMeters, distance))
+            assertTrue(LoopPlanner.select(listOf(attempt(name, fixture)), name.substringBefore('-').toInt(), 1)
+                .single().status.startsWith("SELECTED"))
+        }
     }
 }

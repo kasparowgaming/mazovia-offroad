@@ -78,6 +78,7 @@ class LoopGeoJsonExporterTest {
         val selected = candidate()
         for (invalid in listOf(
             selected.copy(status = "TARGET_DISTANCE_FAILURE"),
+            selected.copy(spikeRejected = true),
             selected.copy(candidateId = "not-a-shape"),
             selected.copy(score = selected.score.copy(targetDistanceError = 0.30)),
             selected.copy(score = selected.score.copy(retraceFraction = 0.21))

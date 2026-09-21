@@ -27,7 +27,11 @@ data class LoopCandidate(
     val candidateId: String = "",
     val geometry: String = "",
     val retraceDistanceMeters: Double = 0.0,
-    val status: String = "PRIMARY"
+    val status: String = "PRIMARY",
+    val localSpikeDistanceMeters: Double = 0.0,
+    val localSpikeRatio: Double = 0.0,
+    val spikeWaypointIndex: Int? = null,
+    val spikeRejected: Boolean = false
 )
 
 /**

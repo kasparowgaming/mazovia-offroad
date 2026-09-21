@@ -10,18 +10,20 @@ internal object LoopPlanner {
     data class Decision(val shape: Shape, val candidate: LoopCandidate?, val status: String)
 
     // Three scales permit distance correction without changing the requested target. Six headings
-    // avoid betting the entire search on one blocked corridor; at most 18 GraphHopper calls.
-    fun shapes(start: GeoPoint, targetKm: Int, preferredDirection: Double?): List<Shape> {
+    // avoid betting the entire search on one blocked corridor: 18 initial calls. Recovery
+    // adds only six shapes, alternating two smaller radii across complementary headings.
+    fun shapes(start: GeoPoint, targetKm: Int, preferredDirection: Double?, recovery: Boolean = false): List<Shape> {
         require(targetKm > 0)
         val base = preferredDirection ?: 0.0
-        return listOf(0.22, 0.27, 0.32).flatMapIndexed { scaleIndex, scale ->
+        return (if (recovery) listOf(0.16) else listOf(0.22, 0.27, 0.32)).flatMapIndexed { scaleIndex, scale ->
             (0 until 6).map { headingIndex ->
                 val heading = (base + headingIndex * 60.0) % 360.0
-                val radius = targetKm * 1000.0 * scale
+                val effectiveScale = if (recovery && headingIndex % 2 == 1) 0.18 else scale
+                val radius = targetKm * 1000.0 * effectiveScale
                 val a = pointAt(start, heading - 34.0, radius)
                 val b = pointAt(start, heading + 34.0, radius * 1.07)
-                Shape("s${scaleIndex + 1}-h${headingIndex + 1}",
-                    "triangle heading=${heading.toInt()} scale=$scale", listOf(a, b))
+                Shape("s${if (recovery) 4 else scaleIndex + 1}-h${headingIndex + 1}",
+                    "triangle heading=${heading.toInt()} scale=$effectiveScale", listOf(a, b))
             }
         }
     }
@@ -41,10 +43,13 @@ internal object LoopPlanner {
             val metrics = route.metrics.copy(retraceFraction = ratio)
             val enriched = route.copy(metrics = metrics)
             val score = LoopScore.calculate(metrics, targetKm)
+            val spike = localSpike(route, attempt.shape.waypoints)
             val candidate = LoopCandidate(enriched, score, attempt.shape.id, attempt.shape.description,
-                retrace, "PRIMARY")
+                retrace, "PRIMARY", spike.distanceMeters, spike.distanceMeters / route.totalDistanceMeters,
+                spike.waypointIndex, spikeRejected(spike.distanceMeters, route.totalDistanceMeters))
             val status = when {
                 ratio > 0.20 -> "EXCESSIVE_RETRACE"
+                candidate.spikeRejected -> "LOCAL_WAYPOINT_SPIKE"
                 score.targetDistanceError > 0.25 -> "TARGET_DISTANCE_FAILURE"
                 else -> "ELIGIBLE"
             }
@@ -113,6 +118,52 @@ internal object LoopPlanner {
     }
 
     private data class Cell(val x: Int, val y: Int, val direction: Int)
+    data class Spike(val distanceMeters: Double, val waypointIndex: Int?)
+
+    // Current graph: rejected short-loop winners 4.56–8.78%; accepted long-loop
+    // winners 0.59–1.15%. Use one scale-independent breakpoint in that gap.
+    // The absolute floor tolerates short junction detours even on small loops.
+    fun spikeRejected(distanceMeters: Double, routeDistanceMeters: Double) =
+        distanceMeters > 300.0 && distanceMeters / routeDistanceMeters > 0.02
+
+    /** Longest immediate reverse overlap, measured on one side of an interior turn.
+     * Compare equal arc-length positions, not vertex indices: segmentation and direction do
+     * not matter. 18 m tolerance absorbs snapping/noise; 12 m steps bound measurement error.
+     * The route is not wrapped, so common start/end access is not an interior turnback. */
+    fun localSpike(route: Route, waypoints: List<GeoPoint>): Spike {
+        val points = route.allPoints.distinctUntilChanged()
+        if (points.size < 3) return Spike(0.0, null)
+        val cumulative = DoubleArray(points.size)
+        for (i in 1 until points.size) cumulative[i] = cumulative[i - 1] + points[i - 1].distanceTo(points[i])
+        fun at(distance: Double): GeoPoint {
+            val found = cumulative.binarySearch(distance)
+            if (found >= 0) return points[found]
+            val right = (-found - 1).coerceIn(1, points.lastIndex)
+            val left = right - 1
+            val t = (distance - cumulative[left]) / (cumulative[right] - cumulative[left])
+            return GeoPoint(points[left].latitude + t * (points[right].latitude - points[left].latitude),
+                points[left].longitude + t * (points[right].longitude - points[left].longitude))
+        }
+        var longest = 0.0
+        var tip: GeoPoint? = null
+        for (i in 1 until points.lastIndex) {
+            val center = cumulative[i]
+            val available = min(center, cumulative.last() - center)
+            var offset = 24.0 // Tiny overlap at a junction is not a spike.
+            var matched = 0.0
+            while (offset <= available) {
+                if (at(center - offset).distanceTo(at(center + offset)) > 18.0) break
+                matched = offset
+                offset += 12.0
+            }
+            if (matched > longest) { longest = matched; tip = points[i] }
+        }
+        return Spike(longest, tip?.let { p -> waypoints.indices.minByOrNull { waypoints[it].distanceTo(p) } })
+    }
+
+    private fun List<GeoPoint>.distinctUntilChanged() = filterIndexed { index, point ->
+        index == 0 || point.distanceTo(this[index - 1]) > 0.01
+    }
     private fun cells(route: Route) = sampled(route).toSet()
     private fun sampled(route: Route): List<Cell> {
         val points = route.segments.flatMap { it.points }

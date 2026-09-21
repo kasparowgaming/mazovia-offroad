@@ -33,7 +33,8 @@ internal object LoopGeoJsonExporter {
         require(selected.route.profile == params.profile)
         require(selected.route.origin == params.startPoint && selected.route.destination == params.startPoint)
         require(selected.score.targetDistanceError <= 0.25 && selected.score.retraceFraction <= 0.20)
-        val shape = LoopPlanner.shapes(params.startPoint, params.targetDistanceKm, params.preferredDirection)
+        require(!selected.spikeRejected)
+        val shape = (LoopPlanner.shapes(params.startPoint, params.targetDistanceKm, params.preferredDirection) + LoopPlanner.shapes(params.startPoint, params.targetDistanceKm, params.preferredDirection, recovery = true))
             .singleOrNull { it.id == selected.candidateId }
             ?: throw IllegalArgumentException("Selected candidate has no matching control-point geometry")
         require(shape.description == selected.geometry) { "Candidate geometry does not match its control points" }
@@ -50,6 +51,11 @@ internal object LoopGeoJsonExporter {
             put("longestTerrainKm", JsonPrimitive(selected.route.metrics.longestContinuousTerrainMeters / 1000.0))
             put("retraceDistanceKm", JsonPrimitive(selected.retraceDistanceMeters / 1000.0))
             put("retracePercent", JsonPrimitive(selected.score.retraceFraction * 100.0))
+            put("localSpikeDistanceMeters", selected.localSpikeDistanceMeters)
+            put("localSpikeRatio", selected.localSpikeRatio)
+            put("spikeRejected", selected.spikeRejected)
+            selected.spikeWaypointIndex?.let { put("spikeWaypointIndex", it) }
+            put("rejectionReason", "NONE")
             put("selectedCandidateId", JsonPrimitive(selected.candidateId))
             put("heading", JsonPrimitive(shape.description.substringAfter("heading=").substringBefore(' ').toInt()))
             put("fallbackUsed", JsonPrimitive(selected.status == "FALLBACK_25_PERCENT"))
@@ -88,6 +94,7 @@ internal object LoopGeoJsonExporter {
                 "${format(candidate.route.metrics.offRoadPercentage)}%</td>" +
                 "<td>${format(candidate.retraceDistanceMeters / 1000.0)} km / " +
                 "${format(candidate.score.retraceFraction * 100.0)}%</td>" +
+                "<td>${format(candidate.localSpikeDistanceMeters)} m / ${format(candidate.localSpikeRatio * 100)}%</td>" +
                 "<td>${candidate.candidateId}</td><td>${if (candidate.status == "PRIMARY") "Primary" else "Fallback"}</td></tr>"
         }
         val index = File(directory, "index.html")
@@ -95,7 +102,7 @@ internal object LoopGeoJsonExporter {
 <html lang="en"><head><meta charset="utf-8"><title>Mazovia loop benchmark routes</title>
 <style>body{font:16px system-ui;margin:2rem}table{border-collapse:collapse}th,td{border:1px solid #bbb;padding:.5rem;text-align:left}th{background:#eee}</style>
 </head><body><h1>Selected loop routes</h1><p>Shape previews have no basemap. GeoJSON files contain complete selected geometry, start, control waypoints, and end.</p>
-<table><thead><tr><th>Target</th><th>Profile</th><th>Shape</th><th>GeoJSON</th><th>Actual</th><th>Error</th><th>Terrain</th><th>Retrace</th><th>ID</th><th>Band</th></tr></thead>
+<table><thead><tr><th>Target</th><th>Profile</th><th>Shape</th><th>GeoJSON</th><th>Actual</th><th>Error</th><th>Terrain</th><th>Retrace</th><th>Local spike (one way)</th><th>ID</th><th>Band</th></tr></thead>
 <tbody>$rows</tbody></table></body></html>
 """, Charsets.UTF_8)
         return index
@@ -136,7 +143,7 @@ internal object LoopGeoJsonExporter {
             12.0 + (x(point) - minX) * scale,
             128.0 - (y(point) - minY) * scale)
         val line = points.joinToString(" ", transform = ::position)
-        val waypoints = LoopPlanner.shapes(start, entry.params.targetDistanceKm, entry.params.preferredDirection)
+        val waypoints = (LoopPlanner.shapes(start, entry.params.targetDistanceKm, entry.params.preferredDirection) + LoopPlanner.shapes(start, entry.params.targetDistanceKm, entry.params.preferredDirection, recovery = true))
             .single { it.id == entry.candidate.candidateId }.waypoints
         val markers = waypoints.joinToString("") { point ->
             val pair = position(point).split(',')

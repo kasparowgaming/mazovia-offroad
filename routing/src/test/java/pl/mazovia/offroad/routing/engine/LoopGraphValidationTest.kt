@@ -52,7 +52,11 @@ class LoopGraphValidationTest {
                     val valid = observed.count { it.candidate != null && it.status in
                         setOf("SELECTED", "SELECTED_FALLBACK", "NOT_SELECTED", "DUPLICATE") }
                     observed.forEach { item ->
+                        val spike = item.candidate?.let { LoopPlanner.localSpike(it.route,
+                            (LoopPlanner.shapes(start, target, null) + LoopPlanner.shapes(start, target, null, recovery = true)).single { shape -> shape.id == item.id }.waypoints) }
                         println("ATTEMPT target=$target profile=$profile id=${item.id} status=${item.status} " +
+                            "localSpikeDistanceMeters=${spike?.distanceMeters} spikeWaypointIndex=${spike?.waypointIndex} " +
+                            "localSpikeRatio=${item.candidate?.localSpikeRatio} spikeRejected=${item.candidate?.spikeRejected} rejectionReason=${item.status} " +
                             "actualKm=${item.candidate?.route?.totalDistanceMeters?.div(1000)} " +
                             "errorPercent=${item.candidate?.score?.targetDistanceError?.times(100)} " +
                             "retracePercent=${item.candidate?.score?.retraceFraction?.times(100)} " +
@@ -71,7 +75,7 @@ class LoopGraphValidationTest {
                         continue
                     }
                     val metrics = candidate.route.metrics
-                    val shape = LoopPlanner.shapes(start, target, null).first { it.id == candidate.candidateId }
+                    val shape = (LoopPlanner.shapes(start, target, null) + LoopPlanner.shapes(start, target, null, recovery = true)).first { it.id == candidate.candidateId }
                     val points = candidate.route.allPoints
                     println("LOOP target=$target profile=$profile id=${candidate.candidateId} " +
                         "geometry=${candidate.geometry} waypointCount=${shape.waypoints.size} " +
@@ -83,6 +87,22 @@ class LoopGraphValidationTest {
                         "status=${candidate.status}")
                     assertTrue(candidate.score.targetDistanceError <= 0.25)
                     assertTrue(candidate.score.retraceFraction <= 0.20)
+                    assertFalse(candidate.spikeRejected)
+                    assertTrue(observed.size <= 24)
+                    if (target >= 100) {
+                        assertEquals(18, observed.size)
+                        val fixture = javaClass.getResourceAsStream("/loop-fixtures/$target-${profile.name.lowercase(java.util.Locale.ROOT)}.txt")!!
+                            .bufferedReader().use { it.readLines() }
+                        assertEquals(fixture.first().toDouble(), candidate.route.totalDistanceMeters, 0.000001)
+                        assertEquals(fixture.size - 1, points.size)
+                        fixture.drop(1).forEachIndexed { index, line ->
+                            val coordinate = line.split(' ')
+                            assertEquals(coordinate[0].toDouble(), points[index].latitude, 0.0)
+                            assertEquals(coordinate[1].toDouble(), points[index].longitude, 0.0)
+                        }
+                    } else {
+                        assertTrue(candidate.localSpikeDistanceMeters <= 300.0)
+                    }
                     val selectedEvent = observed.single { it.selected }
                     assertEquals(candidate.candidateId, selectedEvent.id)
                     assertEquals(candidate.route.id, selectedEvent.candidate!!.route.id)
