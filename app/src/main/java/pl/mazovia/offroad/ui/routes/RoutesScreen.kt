@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import pl.mazovia.offroad.data.repository.RouteRepository
 import pl.mazovia.offroad.designsystem.components.*
 import pl.mazovia.offroad.domain.model.RoutingProfile
+import pl.mazovia.offroad.domain.location.LocationClient
 import pl.mazovia.offroad.domain.routing.RoutingEngine
 import pl.mazovia.offroad.navigation.NavigationManager
 import pl.mazovia.offroad.state.AppModeManager
@@ -24,7 +25,8 @@ fun RoutesScreen(
     routingEngine: RoutingEngine,
     routeRepository: RouteRepository,
     navigationManager: NavigationManager,
-    appModeManager: AppModeManager
+    appModeManager: AppModeManager,
+    locationClient: LocationClient
 ) {
     var selectedSection by remember { mutableStateOf<RoutesSection?>(null) }
 
@@ -39,7 +41,8 @@ fun RoutesScreen(
             onBack = { selectedSection = null },
             routingEngine = routingEngine,
             navigationManager = navigationManager,
-            appModeManager = appModeManager
+            appModeManager = appModeManager,
+            locationClient = locationClient
         )
         RoutesSection.LAS -> ForestScreen(
             onBack = { selectedSection = null },

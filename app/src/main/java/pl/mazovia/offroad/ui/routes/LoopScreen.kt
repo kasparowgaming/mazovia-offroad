@@ -10,6 +10,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
+import pl.mazovia.offroad.domain.location.LocationClient
 import pl.mazovia.offroad.designsystem.components.*
 import pl.mazovia.offroad.domain.model.*
 import pl.mazovia.offroad.domain.routing.RoutingEngine
@@ -22,13 +25,15 @@ fun LoopScreen(
     onBack: () -> Unit,
     routingEngine: RoutingEngine,
     navigationManager: NavigationManager,
-    appModeManager: AppModeManager
+    appModeManager: AppModeManager,
+    locationClient: LocationClient
 ) {
     var selectedDistance by remember { mutableIntStateOf(50) }
     var selectedProfile by remember { mutableStateOf(RoutingProfile.TERENOWY) }
     var candidates by remember { mutableStateOf<List<LoopCandidate>>(emptyList()) }
     var selectedCandidate by remember { mutableStateOf<LoopCandidate?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
+    var message by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -74,6 +79,16 @@ fun LoopScreen(
                 }
             }
 
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(RoutingProfile.TERENOWY, RoutingProfile.ODKRYWCZY).forEach { profile ->
+                        FilterChip(selected = selectedProfile == profile,
+                            onClick = { selectedProfile = profile },
+                            label = { Text(profile.displayNamePl) })
+                    }
+                }
+            }
+
             // Generate button
             item {
                 MazoviaButton(
@@ -81,15 +96,25 @@ fun LoopScreen(
                     onClick = {
                         isGenerating = true
                         scope.launch {
-                            candidates = routingEngine.generateLoopCandidates(
-                                params = LoopParameters(
-                                    startPoint = GeoPoint.WARSAW,
-                                    targetDistanceKm = selectedDistance,
-                                    profile = selectedProfile
-                                ),
-                                candidateCount = 3
-                            )
-                            isGenerating = false
+                            try {
+                                selectedCandidate = null
+                                candidates = emptyList()
+                                message = null
+                                val location = withTimeoutOrNull(10_000) {
+                                    locationClient.getLocationUpdates(1_000).first().point
+                                }
+                                if (location == null) {
+                                    message = "Nie udało się ustalić pozycji startowej. Sprawdź lokalizację i spróbuj ponownie."
+                                } else {
+                                    candidates = routingEngine.generateLoopCandidates(
+                                        LoopParameters(location, selectedDistance, selectedProfile), 3)
+                                    if (candidates.isEmpty()) message = "Nie znaleziono pętli o odpowiednim dystansie i przebiegu."
+                                }
+                            } catch (e: Exception) {
+                                message = "Nie udało się wygenerować pętli: ${e.message ?: "błąd routingu"}"
+                            } finally {
+                                isGenerating = false
+                            }
                         }
                     },
                     enabled = !isGenerating,
@@ -107,16 +132,20 @@ fun LoopScreen(
                 }
 
                 items(candidates) { candidate ->
-                    RouteMetricsCard(
-                        offRoadPercentage = candidate.route.metrics.offRoadPercentage,
-                        asphaltPercentage = candidate.route.metrics.asphaltPercentage,
-                        totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000,
-                        estimatedTimeMinutes = candidate.route.metrics.estimatedTimeSeconds / 60,
-                        longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000,
-                        dataConfidencePercentage = candidate.route.metrics.dataConfidencePercentage,
-                        isSelected = selectedCandidate == candidate,
-                        onSelect = { selectedCandidate = candidate }
-                    )
+                    Column {
+                        Text(if (candidate.status == "FALLBACK_25_PERCENT") "Dystans awaryjny (do ±25%)" else "Dystans docelowy (±15%)")
+                        Text("Powtórzony odcinek: ${"%.1f".format(candidate.retraceDistanceMeters / 1000)} km")
+                        RouteMetricsCard(
+                            offRoadPercentage = candidate.route.metrics.offRoadPercentage,
+                            asphaltPercentage = candidate.route.metrics.asphaltPercentage,
+                            totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000,
+                            estimatedTimeMinutes = candidate.route.metrics.estimatedTimeSeconds / 60,
+                            longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000,
+                            dataConfidencePercentage = candidate.route.metrics.dataConfidencePercentage,
+                            isSelected = selectedCandidate == candidate,
+                            onSelect = { selectedCandidate = candidate }
+                        )
+                    }
                 }
 
                 selectedCandidate?.let { candidate ->
@@ -134,6 +163,7 @@ fun LoopScreen(
             if (isGenerating) {
                 item { LoadingView(message = "Generowanie pętli...") }
             }
+            message?.let { text -> item { Text(text) } }
         }
     }
 }

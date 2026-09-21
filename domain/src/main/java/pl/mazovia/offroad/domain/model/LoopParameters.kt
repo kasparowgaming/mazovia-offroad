@@ -23,7 +23,11 @@ data class LoopParameters(
 @Serializable
 data class LoopCandidate(
     val route: Route,
-    val score: LoopScore
+    val score: LoopScore,
+    val candidateId: String = "",
+    val geometry: String = "",
+    val retraceDistanceMeters: Double = 0.0,
+    val status: String = "PRIMARY"
 )
 
 /**

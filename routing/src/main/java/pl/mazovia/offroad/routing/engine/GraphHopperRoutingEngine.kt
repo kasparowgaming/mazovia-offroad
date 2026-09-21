@@ -60,6 +60,7 @@ open class GraphHopperRoutingEngine : RoutingEngine {
         fun onCandidateEvaluated(candidateId: String, route: Route?, isBaseline: Boolean, waypoints: List<GeoPoint>, elapsedMs: Long, error: String?, routingError: RoutingError?) {}
         fun onTournamentFinished(winner: Route?, evaluations: List<RouteTournament.CandidateEvaluation>, elapsedNanos: Long) {}
         fun onRouteFinished(selected: Route?, tournamentStatus: String) {}
+        fun onLoopAttempt(candidateId: String, geometry: String, targetKm: Int, candidate: LoopCandidate?, status: String, selected: Boolean) {}
     }
 
     private inline fun observe(listener: BenchmarkListener?, event: (BenchmarkListener) -> Unit) {
@@ -573,56 +574,51 @@ open class GraphHopperRoutingEngine : RoutingEngine {
         params: LoopParameters,
         candidateCount: Int
     ): List<LoopCandidate> = withContext(Dispatchers.IO) {
-        val gh = engineState.graphHopper ?: return@withContext emptyList()
-
-        val candidates = mutableListOf<LoopCandidate>()
-        val targetDistanceM = params.targetDistanceKm * 1000.0
-
-        // Generate loop candidates by routing through intermediate waypoints
-        // at different bearings around the start point
-        val bearingStep = 360.0 / (candidateCount * 2)
-        val waypointDistance = targetDistanceM / 4.0 // Quarter of target distance for waypoint
-
-        for (i in 0 until candidateCount * 2) {
-            if (candidates.size >= candidateCount) break
-
-            val bearing = (params.preferredDirection ?: 0.0) + (i * bearingStep)
-            val waypointBearing = bearing % 360.0
-
-            // Calculate intermediate waypoint
-            val waypoint = calculatePointAtBearing(
-                params.startPoint,
-                waypointBearing,
-                waypointDistance
-            )
-
-            try {
-                val result = calculateRoute(
-                    origin = params.startPoint,
-                    destination = params.startPoint,
-                    profile = params.profile,
-                    waypoints = listOf(waypoint)
-                )
-
-                if (result is RoutingResult.Success) {
-                    val route = result.route
-                    val score = LoopScore.calculate(route.metrics, params.targetDistanceKm)
-
-                    // Filter out routes that are too far from target distance
-                    if (score.targetDistanceError < 0.5) {
-                        candidates.add(LoopCandidate(route = route, score = score))
+        if (engineState.graphHopper == null || params.targetDistanceKm <= 0 || candidateCount <= 0) return@withContext emptyList()
+        val attempts = LoopPlanner.shapes(params.startPoint, params.targetDistanceKm, params.preferredDirection)
+            .map { shape ->
+                kotlin.coroutines.coroutineContext.ensureActive()
+                try {
+                    when (val result = calculateRoute(params.startPoint, params.startPoint,
+                        params.profile, shape.waypoints)) {
+                        is RoutingResult.Success -> LoopPlanner.Attempt(shape, result.route)
+                        is RoutingResult.Error -> LoopPlanner.Attempt(shape, null, result.error.name)
                     }
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    LoopPlanner.Attempt(shape, null, "ROUTING_FAILURE: ${e.message}")
                 }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (_: Exception) {
-                // Skip failed candidates
             }
+        val decisions = LoopPlanner.select(attempts, params.targetDistanceKm, candidateCount)
+        decisions.forEach { decision ->
+            val selected = decision.status == "SELECTED" || decision.status == "SELECTED_FALLBACK"
+            observe(benchmarkListener) { it.onLoopAttempt(decision.shape.id, decision.shape.description,
+                params.targetDistanceKm, decision.candidate, decision.status, selected) }
+            android.util.Log.e("LoopDiagnostic", "id=${decision.shape.id} geometry=${decision.shape.description} " +
+                "targetKm=${params.targetDistanceKm} actualMeters=${decision.candidate?.route?.totalDistanceMeters} " +
+                "error=${decision.candidate?.score?.targetDistanceError} terrainMeters=${decision.candidate?.route?.metrics?.offRoadDistanceMeters} " +
+                "terrainPercent=${decision.candidate?.route?.metrics?.offRoadPercentage} longestTerrainMeters=${decision.candidate?.route?.metrics?.longestContinuousTerrainMeters} " +
+                "retraceMeters=${decision.candidate?.retraceDistanceMeters} retraceRatio=${decision.candidate?.score?.retraceFraction} " +
+                "status=${decision.status} selected=$selected")
         }
-
-        // Sort by overall score and return top candidates
-        candidates.sortedByDescending { it.score.overallScore }
-            .take(candidateCount)
+        val selectedIds = decisions.filter { it.status == "SELECTED" || it.status == "SELECTED_FALLBACK" }
+            .map { it.shape.id }.toSet()
+        // select() returns diagnostics in generation order; selection order is reconstructed
+        // from the same deterministic policy for the API's first recommended candidate.
+        decisions.filter { it.shape.id in selectedIds }.mapNotNull { it.candidate }
+            .sortedWith(compareBy<LoopCandidate> {
+                if (it.status == "FALLBACK_25_PERCENT") it.score.targetDistanceError
+                else if (it.score.retraceFraction <= 0.10) 0.0 else 1.0
+            }.thenBy {
+                if (it.status == "FALLBACK_25_PERCENT") { if (it.score.retraceFraction <= 0.10) 0.0 else 1.0 }
+                else kotlin.math.floor(it.score.targetDistanceError / 0.05)
+            }
+                .thenByDescending { it.route.metrics.offRoadDistanceMeters - it.retraceDistanceMeters }
+                .thenByDescending { it.route.metrics.longestContinuousTerrainMeters }
+                .thenBy { it.route.metrics.longestAsphaltConnectorMeters }
+                .thenBy { it.score.targetDistanceError }
+                .thenBy { it.candidateId })
     }
 
     override suspend fun recalculateFromPosition(

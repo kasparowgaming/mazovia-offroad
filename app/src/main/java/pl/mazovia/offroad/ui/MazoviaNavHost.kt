@@ -102,7 +102,8 @@ private fun PlanningShell(
                     routingEngine = app.routingEngine,
                     routeRepository = app.routeRepository,
                     navigationManager = app.navigationManager,
-                    appModeManager = appModeManager
+                    appModeManager = appModeManager,
+                    locationClient = app.locationClient
                 )
                 MazoviaTab.JAZDY -> RidesScreen(
                     rideRepository = app.rideRepository,
