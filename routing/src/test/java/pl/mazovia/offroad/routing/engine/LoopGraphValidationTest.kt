@@ -23,10 +23,15 @@ class LoopGraphValidationTest {
         assumeTrue(System.getenv("MAZOVIA_RUN_LOOP_VALIDATION") == "1")
         val graph = File(System.getenv("MAZOVIA_GRAPH_PATH") ?: error("MAZOVIA_GRAPH_PATH is required"))
         assertTrue(graph.isDirectory)
+        fun graphFiles() = graph.walkTopDown().filter { it.isFile }.associate {
+            it.relativeTo(graph).path to (it.length() to it.lastModified())
+        }
+        val graphBefore = graphFiles()
         mockkStatic(android.util.Log::class)
         every { android.util.Log.e(any(), any()) } returns 0
         every { android.util.Log.e(any(), any(), any()) } returns 0
         val engine = GraphHopperRoutingEngine()
+        val exports = mutableListOf<LoopGeoJsonExporter.Entry>()
         try {
             assertTrue(engine.loadGraph(graph.absolutePath))
             val start = GeoPoint(52.1567802, 22.3448868)
@@ -78,10 +83,25 @@ class LoopGraphValidationTest {
                         "status=${candidate.status}")
                     assertTrue(candidate.score.targetDistanceError <= 0.25)
                     assertTrue(candidate.score.retraceFraction <= 0.20)
+                    val selectedEvent = observed.single { it.selected }
+                    assertEquals(candidate.candidateId, selectedEvent.id)
+                    assertEquals(candidate.route.id, selectedEvent.candidate!!.route.id)
+                    assertEquals(candidate.route.allPoints, selectedEvent.candidate.route.allPoints)
+                    val params = LoopParameters(start, target, profile)
+                    val exported = LoopGeoJsonExporter.exportSelected(File("build"), params, candidate)
+                    exports.add(exported)
+                    println("EXPORT target=$target profile=$profile file=${exported.file.absolutePath} " +
+                        "id=${candidate.candidateId} points=${points.size}")
                 }
             }
+            if (System.getenv("MAZOVIA_LOOP_PROFILE") == null && System.getenv("MAZOVIA_LOOP_TARGET") == null) {
+                assertEquals(8, exports.size)
+            }
+            val index = LoopGeoJsonExporter.writeIndex(File("build"), exports)
+            println("EXPORT_INDEX ${index.absolutePath}")
         } finally {
             engine.unloadGraph()
         }
+        assertEquals("Read-only graph files changed", graphBefore, graphFiles())
     }
 }
