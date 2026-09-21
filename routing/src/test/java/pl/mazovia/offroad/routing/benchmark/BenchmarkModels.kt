@@ -20,6 +20,8 @@ internal data class BenchmarkScenario(
 
 /** Existing columns retain order. Blank = unavailable/not applicable, never a synthetic zero.
  * Point-to-point counts continue to exclude baseline attempts; loop counts include all subroute attempts.
+ * candidateCountSuccessful counts successful routing, including subsequent eligibility rejections.
+ * Candidate status/score and separate rejection counts describe tournament participation.
  * tournamentTimeMs is fractional milliseconds of evaluation/selection only, summed for the run.
  */
 internal data class BenchmarkSummaryResult(
@@ -55,10 +57,12 @@ internal data class BenchmarkSummaryResult(
     val selectedCandidateId: String?,
     val tournamentStatus: String,
     val executionSemantics: String,
-    val tournamentTimeNanos: Long?
+    val tournamentTimeNanos: Long?,
+    val candidateCountRejectedByMarginalTerrainEfficiency: Int = 0
 )
 
-/** score is blank when not scored (failed, detour rejected, or no tournament).
+/** score is blank when not scored (failed, eligibility rejected, or no tournament).
+ * Shortest reference distances use meters; marginal efficiency and its limit use ratios.
  * detourRatio = candidate / baseline; detourLimitPercent uses percent units (60, 100).
  * acceptedByDetourGuard comes from the real tournament, including its 0.1m epsilon.
  * SUCCESS and NOT_SELECTED both mean successful eligible evaluations; NOT_SELECTED
@@ -96,5 +100,9 @@ internal data class BenchmarkCandidateResult(
     val terrainDistanceMeters: Double?,
     val asphaltDistanceMeters: Double?,
     val routeId: String?,
-    val waypoints: String
+    val waypoints: String,
+    val shortestReferenceDistance: Double? = null,
+    val shortestReferenceTerrainDistance: Double? = null,
+    val marginalTerrainEfficiency: Double? = null,
+    val marginalTerrainEfficiencyLimit: Double? = null
 )

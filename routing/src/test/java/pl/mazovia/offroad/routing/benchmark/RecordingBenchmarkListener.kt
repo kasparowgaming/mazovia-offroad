@@ -88,10 +88,15 @@ internal class RecordingBenchmarkListener(
                 status = when {
                     evaluation.rejectionReason == "INVALID_CANDIDATE" -> "INVALID_CANDIDATE"
                     accepted == false -> "DETOUR_REJECTED"
+                    evaluation.rejectionReason == "MARGINAL_TERRAIN_EFFICIENCY" -> "MARGINAL_TERRAIN_EFFICIENCY_REJECTED"
                     selected -> "SUCCESS"
                     else -> "NOT_SELECTED"
                 },
-                rejectionReason = evaluation.rejectionReason ?: if (!selected) "LOWER_SCORE_OR_TIE" else null
+                rejectionReason = evaluation.rejectionReason ?: if (!selected) "LOWER_SCORE_OR_TIE" else null,
+                shortestReferenceDistance = evaluation.shortestReferenceDistance,
+                shortestReferenceTerrainDistance = evaluation.shortestReferenceTerrainDistance,
+                marginalTerrainEfficiency = evaluation.marginalTerrainEfficiency,
+                marginalTerrainEfficiencyLimit = evaluation.marginalTerrainEfficiencyLimit
             )
         }
     }
@@ -130,7 +135,8 @@ internal class RecordingBenchmarkListener(
         if (!isLoop && tournamentStatus == "EVALUATED") {
             check(selected.tournamentScore != null && selected.status == "SUCCESS")
             check(capturedCandidates.filter { it.routingSuccess }.all {
-                it.acceptedByDetourGuard != null && (it.acceptedByDetourGuard == false || it.tournamentScore != null)
+                it.acceptedByDetourGuard != null &&
+                    (it.status in setOf("DETOUR_REJECTED", "INVALID_CANDIDATE", "MARGINAL_TERRAIN_EFFICIENCY_REJECTED") || it.tournamentScore != null)
             })
         }
     }
@@ -148,7 +154,8 @@ internal class RecordingBenchmarkListener(
             baselineTimeMs, tournamentTimeMs, totalTimeNanos / 1_000_000,
             diagnostics?.uTurnCount, diagnostics?.shortManeuverLegCount,
             heapBefore, heapAfter, heapAfter - heapBefore, selected?.candidateId,
-            tournamentStatus, scenario.executionSemantics, tournamentTimeNanos
+            tournamentStatus, scenario.executionSemantics, tournamentTimeNanos,
+            capturedCandidates.count { (!it.isBaseline || isLoop) && it.rejectionReason == "MARGINAL_TERRAIN_EFFICIENCY" }
         )
     }
 }

@@ -6,7 +6,7 @@ import java.util.Locale
 internal object BenchmarkCsvExporter {
     fun writeSummaryCsv(file: File, results: List<BenchmarkSummaryResult>) {
         file.bufferedWriter().use { writer ->
-            writer.write("scenarioName,origin,destination,profile,runIndex,isWarmup,success,failureReason,baselineDistanceMeters,selectedDistanceMeters,detourPercent,terrainDistanceMeters,terrainPercent,longestContinuousTerrainMeters,terrainRunCount,longestAsphaltConnectorMeters,selectedTournamentScore,candidateCountAttempted,candidateCountSuccessful,candidateCountRejectedByDetour,candidateCountFailed,baselineTimeMs,tournamentTimeMs,totalTimeMs,uTurnCount,shortManeuverLegCount,usedHeapBeforeBytes,usedHeapAfterBytes,heapDeltaBytes,selectedCandidateId,tournamentStatus,executionSemantics,tournamentTimeNanos\n")
+            writer.write("scenarioName,origin,destination,profile,runIndex,isWarmup,success,failureReason,baselineDistanceMeters,selectedDistanceMeters,detourPercent,terrainDistanceMeters,terrainPercent,longestContinuousTerrainMeters,terrainRunCount,longestAsphaltConnectorMeters,selectedTournamentScore,candidateCountAttempted,candidateCountSuccessful,candidateCountRejectedByDetour,candidateCountFailed,baselineTimeMs,tournamentTimeMs,totalTimeMs,uTurnCount,shortManeuverLegCount,usedHeapBeforeBytes,usedHeapAfterBytes,heapDeltaBytes,selectedCandidateId,tournamentStatus,executionSemantics,tournamentTimeNanos,candidateCountRejectedByMarginalTerrainEfficiency\n")
             for (r in results) writer.write(row(listOf(
                 r.scenarioName, "${r.origin.latitude}_${r.origin.longitude}", "${r.destination.latitude}_${r.destination.longitude}",
                 r.profile.name, r.runIndex, r.isWarmup, r.success, r.failureReason,
@@ -15,14 +15,14 @@ internal object BenchmarkCsvExporter {
                 r.selectedTournamentScore, r.candidateCountAttempted, r.candidateCountSuccessful, r.candidateCountRejectedByDetour,
                 r.candidateCountFailed, r.baselineTimeMs, r.tournamentTimeMs, r.totalTimeMs, r.uTurnCount,
                 r.shortManeuverLegCount, r.usedHeapBeforeBytes, r.usedHeapAfterBytes, r.heapDeltaBytes,
-                r.selectedCandidateId, r.tournamentStatus, r.executionSemantics, r.tournamentTimeNanos
+                r.selectedCandidateId, r.tournamentStatus, r.executionSemantics, r.tournamentTimeNanos, r.candidateCountRejectedByMarginalTerrainEfficiency
             )) + "\n")
         }
     }
 
     fun writeCandidateCsv(file: File, candidates: List<BenchmarkCandidateResult>) {
         file.bufferedWriter().use { writer ->
-            writer.write("scenarioName,profile,runIndex,isWarmup,candidateId,isBaseline,distanceMeters,detourPercent,terrainPercent,longestContinuousTerrainMeters,terrainRunCount,longestAsphaltConnectorMeters,tournamentScore,acceptedByDetourGuard,routingSuccess,elapsedMs,failureReason,selected,source,status,rejectionReason,baselineDistanceMeters,detourRatio,extraDistanceMeters,detourLimitPercent,maxAllowedDistanceMeters,exceedsDetourLimit,terrainDistanceMeters,asphaltDistanceMeters,routeId,waypoints\n")
+            writer.write("scenarioName,profile,runIndex,isWarmup,candidateId,isBaseline,distanceMeters,detourPercent,terrainPercent,longestContinuousTerrainMeters,terrainRunCount,longestAsphaltConnectorMeters,tournamentScore,acceptedByDetourGuard,routingSuccess,elapsedMs,failureReason,selected,source,status,rejectionReason,baselineDistanceMeters,detourRatio,extraDistanceMeters,detourLimitPercent,maxAllowedDistanceMeters,exceedsDetourLimit,terrainDistanceMeters,asphaltDistanceMeters,routeId,waypoints,shortestReferenceDistance,shortestReferenceTerrainDistance,marginalTerrainEfficiency,marginalTerrainEfficiencyLimit\n")
             for (c in candidates) writer.write(row(listOf(
                 c.scenarioName, c.profile.name, c.runIndex, c.isWarmup, c.candidateId, c.isBaseline,
                 c.distanceMeters, c.detourPercent, c.terrainPercent, c.longestContinuousTerrainMeters, c.terrainRunCount,
@@ -30,7 +30,9 @@ internal object BenchmarkCsvExporter {
                 c.elapsedMs, c.failureReason, c.selected, c.source, c.status, c.rejectionReason,
                 c.baselineDistanceMeters, c.detourRatio, c.extraDistanceMeters, c.detourLimitPercent,
                 c.maxAllowedDistanceMeters, c.exceedsDetourLimit, c.terrainDistanceMeters,
-                c.asphaltDistanceMeters, c.routeId, c.waypoints
+                c.asphaltDistanceMeters, c.routeId, c.waypoints,
+                c.shortestReferenceDistance, c.shortestReferenceTerrainDistance,
+                c.marginalTerrainEfficiency, c.marginalTerrainEfficiencyLimit
             )) + "\n")
         }
     }

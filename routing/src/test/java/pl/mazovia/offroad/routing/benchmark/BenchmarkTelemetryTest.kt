@@ -122,7 +122,7 @@ class BenchmarkTelemetryTest {
                     setPoints(points)
                     setDistance(GeoPoint(52.0, 21.0).distanceTo(GeoPoint(52.0 + delta, 21.0)))
                     setInstructions(InstructionList(null))
-                    addPathDetails(mapOf("surface" to listOf(PathDetail(if (index == 0) "asphalt" else "dirt").apply { first = 0; last = 1 })))
+                    addPathDetails(mapOf("surface" to listOf(PathDetail(if (index == 0 || index == 4) "asphalt" else "dirt").apply { first = 0; last = 1 })))
                 }
                 GHResponse().apply { add(path) }
             }
@@ -141,6 +141,7 @@ class BenchmarkTelemetryTest {
         assertEquals(9, listener.capturedCandidates.size)
         assertEquals("NO_PATH", listener.capturedCandidates.single { !it.routingSuccess }.status)
         assertTrue(listener.capturedCandidates.any { it.status == "DETOUR_REJECTED" })
+        assertTrue(listener.capturedCandidates.any { it.status == "MARGINAL_TERRAIN_EFFICIENCY_REJECTED" })
         assertTrue(summary.tournamentTimeNanos!! > 0)
         assertTrue(summary.tournamentTimeMs!! > 0.0)
         assertEquals(RouteTournament.tournamentTerrainValue(observed.route, RoutingProfile.TERENOWY), summary.selectedTournamentScore!!, 0.0)
@@ -197,5 +198,59 @@ class BenchmarkTelemetryTest {
 
     @Test fun `CSV distinguishes missing zero and quoted failure text`() {
         assertEquals(",0.000000,\"error, \"\"quoted\"\"\"", BenchmarkCsvExporter.row(listOf(null, 0.0, "error, \"quoted\"")))
+    }
+
+    @Test fun `efficiency rejection uses shortest corridor and survives exported telemetry`() {
+        val profile = RoutingProfile.ODKRYWCZY
+        val baseline = route("baseline", 12000.0, 7500.0)
+        val shortest = route("shortest", 10000.0, 7000.0)
+        val rejected = route("rejected", 14000.0, 9500.0)
+        val listener = RecordingBenchmarkListener("test", profile, 1, false)
+        listener.onRouteStarted()
+        listener.onCandidateEvaluated("baseline", baseline, true, emptyList(), 1, null, null)
+        listener.onCandidateEvaluated("corridor-1", shortest, false, emptyList(), 1, null, null)
+        listener.onCandidateEvaluated("corridor-2", rejected, false, emptyList(), 1, null, null)
+        val observations = mutableListOf<RouteTournament.CandidateEvaluation>()
+        val candidates = listOf(shortest, rejected, baseline)
+        val winner = RouteTournament.chooseTournamentWinner(candidates, 12000.0, profile, observations)
+        assertSame(shortest, winner)
+        assertSame(winner, RouteTournament.chooseTournamentWinner(candidates, 12000.0, profile))
+        listener.onTournamentFinished(winner, observations, 100)
+        listener.onRouteFinished(winner, "EVALUATED")
+        val summary = listener.summarize(scenario, winner, null, 1000, 0, 0)
+        assertEquals("call-1:corridor-1", summary.selectedCandidateId)
+        assertEquals(10000.0, summary.selectedDistanceMeters!!, 0.0)
+        assertEquals(7000.0, summary.terrainDistanceMeters!!, 0.0)
+        assertEquals(RouteTournament.tournamentTerrainValue(shortest, profile), summary.selectedTournamentScore!!, 0.0)
+        assertEquals(1, summary.candidateCountRejectedByMarginalTerrainEfficiency) // excludes baseline, like existing counts
+        assertEquals(0, summary.candidateCountRejectedByDetour)
+        assertEquals(0, summary.candidateCountFailed)
+        val rows = listener.capturedCandidates
+        assertEquals(3, rows.size)
+        assertTrue(rows.all { it.shortestReferenceDistance == 10000.0 && it.shortestReferenceTerrainDistance == 7000.0 })
+        val rejectedRow = rows.last()
+        assertEquals(0.625, rejectedRow.marginalTerrainEfficiency!!, 0.0)
+        assertEquals(0.70, rejectedRow.marginalTerrainEfficiencyLimit!!, 0.0)
+        assertEquals(true, rejectedRow.acceptedByDetourGuard)
+        assertTrue(rejectedRow.routingSuccess)
+        assertFalse(rejectedRow.selected)
+        assertNull(rejectedRow.tournamentScore)
+        assertEquals("MARGINAL_TERRAIN_EFFICIENCY_REJECTED", rejectedRow.status)
+        assertNull(rows[1].marginalTerrainEfficiency)
+        val file = temporary.newFile("efficiency.csv")
+        BenchmarkCsvExporter.writeCandidateCsv(file, rows)
+        val lines = file.readLines()
+        assertEquals(4, lines.size)
+        val headers = lines.first().split(',')
+        val fields = lines.last().split(',')
+        fun field(name: String) = fields[headers.indexOf(name)]
+        assertEquals("MARGINAL_TERRAIN_EFFICIENCY", field("rejectionReason"))
+        assertEquals("MARGINAL_TERRAIN_EFFICIENCY_REJECTED", field("status"))
+        assertEquals("10000.000000", field("shortestReferenceDistance"))
+        assertEquals("7000.000000", field("shortestReferenceTerrainDistance"))
+        assertEquals("0.625000", field("marginalTerrainEfficiency"))
+        assertEquals("0.700000", field("marginalTerrainEfficiencyLimit"))
+        assertEquals("", field("tournamentScore"))
+        assertEquals("false", field("selected"))
     }
 }

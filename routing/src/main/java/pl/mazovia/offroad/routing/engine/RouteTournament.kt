@@ -17,9 +17,15 @@ internal object RouteTournament {
         val maxAllowedDistanceMeters: Double?,
         val acceptedByDetourGuard: Boolean?,
         val score: Double?,
-        val rejectionReason: String?
+        val rejectionReason: String?,
+        val shortestReferenceDistance: Double? = null,
+        val shortestReferenceTerrainDistance: Double? = null,
+        val marginalTerrainEfficiency: Double? = null,
+        val marginalTerrainEfficiencyLimit: Double? = null
     )
     private const val EARTH_RADIUS_METERS = 6_371_000.0
+    private const val MIN_MARGINAL_TERRAIN_EFFICIENCY = 0.70
+    private const val EQUAL_DISTANCE_EPSILON_METERS = 0.1
 
     /**
      * Generuje geometryczne korytarze baczne do zbadania rnnorodnoci off-road.
@@ -103,9 +109,20 @@ internal object RouteTournament {
         // 0.1 meter epsilon to absorb floating point inaccuracies around the exact boundary
         val maxAllowedDistance = baselineDistanceMeters * (1.0 + limit) + 0.1
 
-        // Filter valid candidates by max allowed distance
+        // The caller supplies successfully routed A-to-B candidates, including the baseline.
+        // The shortest reference need not be the profile baseline.
+        val shortest = candidates.minByOrNull { it.totalDistanceMeters }!!
+        fun marginalEfficiency(route: Route): Double? {
+            val extraDistance = route.totalDistanceMeters - shortest.totalDistanceMeters
+            if (extraDistance <= EQUAL_DISTANCE_EPSILON_METERS) return null
+            return (route.metrics.offRoadDistanceMeters - shortest.metrics.offRoadDistanceMeters) / extraDistance
+        }
+        fun passesEfficiency(route: Route): Boolean =
+            marginalEfficiency(route)?.let { it >= MIN_MARGINAL_TERRAIN_EFFICIENCY } ?: true
+
+        // Both gates apply; preserve the input order for score ties.
         val eligible = candidates.filter { route ->
-            route.totalDistanceMeters <= maxAllowedDistance
+            route.totalDistanceMeters <= maxAllowedDistance && passesEfficiency(route)
         }
 
         val scores = if (observations != null) java.util.IdentityHashMap<Route, Double>() else null
@@ -117,12 +134,19 @@ internal object RouteTournament {
         if (observations != null) {
             for (route in candidates) {
                 val accepted = route.totalDistanceMeters <= maxAllowedDistance
+                val rejectionReason = when {
+                    !route.totalDistanceMeters.isFinite() -> "INVALID_CANDIDATE"
+                    !accepted -> "DETOUR_LIMIT"
+                    !passesEfficiency(route) -> "MARGINAL_TERRAIN_EFFICIENCY"
+                    else -> null
+                }
                 // maxByOrNull skips its selector for a singleton. Its score is
                 // still defined by the same authoritative scoring function.
-                val score = if (accepted) scores!![route] ?: tournamentTerrainValue(route, profile) else null
+                val score = if (rejectionReason == null) scores!![route] ?: tournamentTerrainValue(route, profile) else null
                 observations.add(CandidateEvaluation(
                     route, baselineDistanceMeters, limit, maxAllowedDistance, accepted, score,
-                    if (accepted) null else if (!route.totalDistanceMeters.isFinite()) "INVALID_CANDIDATE" else "DETOUR_LIMIT"
+                    rejectionReason, shortest.totalDistanceMeters, shortest.metrics.offRoadDistanceMeters,
+                    marginalEfficiency(route), MIN_MARGINAL_TERRAIN_EFFICIENCY
                 ))
             }
         }

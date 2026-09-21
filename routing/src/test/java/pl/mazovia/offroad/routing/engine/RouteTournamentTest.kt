@@ -34,11 +34,11 @@ class RouteTournamentTest {
     }
     @Test
     fun `CASE A - CONTINUITY prefers one long continuous section over fragmented ones`() {
-        // Candidate A: 45km total, 20km dirt, 1 run of 15km
+        // Equal total distance isolates continuity from the marginal-efficiency gate.
         val candidateA = createMockRoute(
-            distanceMeters = 45000.0,
+            distanceMeters = 43000.0,
             offRoadMeters = 20000.0,
-            asphaltMeters = 25000.0,
+            asphaltMeters = 23000.0,
             longestContinuousTerrain = 15000.0,
             terrainRuns = 2,
             longestConnector = 10000.0
