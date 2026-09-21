@@ -22,5 +22,7 @@ data class RideEntity(
     val explorationPercentage: Double = 0.0,
     val surfaceDistribution: Map<Surface, Double>? = null,
     val routeId: String? = null,
-    val pendingFeedback: List<String>? = null
+    val pendingFeedback: List<String>? = null,
+    @androidx.room.ColumnInfo(defaultValue = "0")
+    val terrainClassificationAvailable: Boolean = false
 )

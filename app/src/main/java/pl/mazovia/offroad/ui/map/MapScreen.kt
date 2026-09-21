@@ -38,7 +38,9 @@ fun MapScreen(
     appModeManager: AppModeManager,
     locationClient: pl.mazovia.offroad.domain.location.LocationClient,
     placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository,
-    onNavigateToOfflineData: () -> Unit = {}
+    onNavigateToOfflineData: () -> Unit = {},
+    previewRoute: pl.mazovia.offroad.domain.model.Route? = null,
+    onPreviewConsumed: () -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val viewModel: MapViewModel = viewModel(
@@ -59,6 +61,9 @@ fun MapScreen(
     
     val uiState by viewModel.uiState.collectAsState()
     val centerRequest by viewModel.centerRequests.collectAsState()
+    LaunchedEffect(previewRoute) {
+        previewRoute?.let { viewModel.previewSavedRoute(it); onPreviewConsumed() }
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         // Map fills the entire screen
@@ -159,13 +164,13 @@ fun MapScreen(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
-                            text = "Brak danych routingu",
+                            text = "Brak danych tras",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
                         Text(
-                            text = "Aby wyznacza\u0107 trasy, wczytaj graf GraphHopper.",
+                            text = "Nie można wyznaczyć trasy. Wczytaj dane offline dla tego obszaru.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onErrorContainer
                         )
@@ -208,6 +213,9 @@ fun MapScreen(
                         )
                         TextButton(onClick = { viewModel.clearError() }) {
                             Text("OK")
+                        }
+                        TextButton(onClick = viewModel::retry) {
+                            Text("Ponów")
                         }
                     }
                 }

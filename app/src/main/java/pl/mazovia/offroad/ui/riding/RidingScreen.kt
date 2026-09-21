@@ -54,7 +54,7 @@ fun RidingScreen(
     val context = androidx.compose.ui.platform.LocalContext.current
 
     var showMore by remember { mutableStateOf(false) }
-    var isStopping by remember { mutableStateOf(false) }
+    var isStopping by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
 
     // Recovered state notification
     if (navState.isRecovered) {
@@ -63,22 +63,20 @@ fun RidingScreen(
         }
     }
 
-    // Synchronize UI switch with persistence completion
-    LaunchedEffect(isStopping, recordingSession) {
-        if (isStopping && recordingSession == null) {
-            android.util.Log.d("StopTrace", "SWITCHING_TO_POST_RIDE_VIA_DB_SYNC=true")
-            appModeManager.switchToPostRide()
-        }
+    val completion by pl.mazovia.offroad.service.TrackRecordingService.rideCompletion.collectAsState()
+    LaunchedEffect(isStopping, completion) {
+        if (isStopping && completion.rideId != null) appModeManager.switchToPostRide(completion.rideId)
     }
-
-    // Safety fallback: if DB takes too long or service is dead, force exit after 3 seconds
-    LaunchedEffect(isStopping) {
-        if (isStopping) {
-            kotlinx.coroutines.delay(3000L)
-            android.util.Log.d("StopTrace", "SWITCHING_TO_POST_RIDE_VIA_TIMEOUT=true")
-            appModeManager.switchToPostRide()
-        }
-    }
+    if (isStopping && completion.error != null) AlertDialog(
+        onDismissRequest = {}, title = { Text("Nie zapisano jazdy") },
+        text = { Text(completion.error!!) },
+        confirmButton = { TextButton(onClick = {
+            if (!completion.canRetry) appModeManager.switchToPlanning()
+            else context.startService(android.content.Intent(context, pl.mazovia.offroad.service.TrackRecordingService::class.java).apply {
+                action = pl.mazovia.offroad.service.TrackRecordingService.ACTION_STOP
+            })
+        }) { Text(if (completion.canRetry) "Ponów zapis" else "Wróć do planowania") } }
+    )
 
     val handleStopRide = {
         android.util.Log.d("StopTrace", "HANDLE_STOP_RIDE_ENTERED=true")
@@ -86,6 +84,7 @@ fun RidingScreen(
         android.util.Log.d("StopTrace", "ACTIVE_RECORDING_SESSION=${recordingSession != null}")
         
         if (!isStopping) {
+            pl.mazovia.offroad.service.TrackRecordingService.prepareToFinish()
             isStopping = true
             android.util.Log.d("StopTrace", "TRACK_RECORDING_STOP_REQUESTED=true")
             
@@ -134,6 +133,7 @@ private fun PortraitRidingLayout(
     onMore: () -> Unit,
     onStopNavigation: () -> Unit
 ) {
+    val zoom = remember { pl.mazovia.offroad.ui.map.components.MapZoomState() }
     var centerRequest by remember { mutableLongStateOf(0L) }
     var isFollowMode by remember { mutableStateOf(true) }
 
@@ -246,6 +246,7 @@ private fun PortraitRidingLayout(
                         destination = navState.route?.destination,
                         routePoints = routePoints,
                         centerRequest = centerRequest,
+                        zoomSteps = zoom.steps,
                         onLongPress = { },
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
@@ -259,6 +260,7 @@ private fun PortraitRidingLayout(
                         destination = navState.route?.destination,
                         routePoints = routePoints,
                         centerRequest = centerRequest,
+                        zoomSteps = zoom.steps,
                         onLongPress = { },
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
@@ -272,6 +274,7 @@ private fun PortraitRidingLayout(
                         destination = navState.route?.destination,
                         routePoints = routePoints,
                         centerRequest = centerRequest,
+                        zoomSteps = zoom.steps,
                         onLongPress = { },
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
@@ -319,24 +322,24 @@ private fun PortraitRidingLayout(
                         .border(1.dp, MazoviaColors.RidingBorder, androidx.compose.foundation.shape.RoundedCornerShape(20.dp))
                 ) {
                     androidx.compose.material3.IconButton(
-                        onClick = { /* zoom in */ },
+                        onClick = zoom::zoomIn,
                         modifier = Modifier.size(40.dp)
                     ) {
                         androidx.compose.material3.Icon(
                             imageVector = androidx.compose.material.icons.Icons.Default.Add,
-                            contentDescription = "Zoom In",
+                            contentDescription = "Przybliż",
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
                     }
                     androidx.compose.material3.HorizontalDivider(color = MazoviaColors.RidingBorder, modifier = Modifier.width(40.dp))
                     androidx.compose.material3.IconButton(
-                        onClick = { /* zoom out */ },
+                        onClick = zoom::zoomOut,
                         modifier = Modifier.size(40.dp)
                     ) {
                         androidx.compose.material3.Icon(
                             imageVector = androidx.compose.material.icons.Icons.Default.Remove,
-                            contentDescription = "Zoom Out",
+                            contentDescription = "Oddal",
                             tint = Color.White,
                             modifier = Modifier.size(20.dp)
                         )
@@ -401,6 +404,7 @@ private fun LandscapeRidingLayout(
     onMore: () -> Unit,
     onStopNavigation: () -> Unit
 ) {
+    val zoom = remember { pl.mazovia.offroad.ui.map.components.MapZoomState() }
     var centerRequest by remember { mutableLongStateOf(0L) }
     var isFollowMode by remember { mutableStateOf(true) }
 
@@ -476,6 +480,7 @@ private fun LandscapeRidingLayout(
                         destination = navState.route?.destination,
                         routePoints = routePoints,
                         centerRequest = centerRequest,
+                        zoomSteps = zoom.steps,
                         onLongPress = { },
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
@@ -489,6 +494,7 @@ private fun LandscapeRidingLayout(
                         destination = navState.route?.destination,
                         routePoints = routePoints,
                         centerRequest = centerRequest,
+                        zoomSteps = zoom.steps,
                         onLongPress = { },
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
@@ -502,6 +508,7 @@ private fun LandscapeRidingLayout(
                         destination = navState.route?.destination,
                         routePoints = routePoints,
                         centerRequest = centerRequest,
+                        zoomSteps = zoom.steps,
                         onLongPress = { },
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
@@ -533,6 +540,11 @@ private fun LandscapeRidingLayout(
             }
 
             // Terrain Radar Overlay
+            Column(modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp)) {
+                IconButton(onClick = zoom::zoomIn) { Icon(Icons.Default.Add, "Przybliż", tint = Color.White) }
+                IconButton(onClick = zoom::zoomOut) { Icon(Icons.Default.Remove, "Oddal", tint = Color.White) }
+            }
+
             navState.route?.let { route ->
                 val calculator = remember { pl.mazovia.offroad.routing.terrain.TerrainRadarCalculator() }
                 val radar = calculator.calculate(route, navState.currentSegmentIndex)

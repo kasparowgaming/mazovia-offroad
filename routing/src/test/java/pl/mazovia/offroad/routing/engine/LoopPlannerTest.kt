@@ -158,4 +158,54 @@ class LoopPlannerTest {
                 .single().status.startsWith("SELECTED"))
         }
     }
+
+    @Test fun `direction wrap and bin boundaries preserve reverse spike detection with noise`() {
+        for (degrees in listOf(0.0, 360.0, 180.0, 7.499, 7.501, 187.499, 187.501)) {
+            val angle = Math.toRadians(degrees)
+            fun rotate(p: GeoPoint): GeoPoint {
+                val x = (p.longitude - start.longitude) * 111_195.0 * kotlin.math.cos(Math.toRadians(start.latitude))
+                val y = (p.latitude - start.latitude) * 111_195.0
+                return point(x * kotlin.math.cos(angle) - y * kotlin.math.sin(angle),
+                    x * kotlin.math.sin(angle) + y * kotlin.math.cos(angle))
+            }
+            val noisy = spiked(2000.0, 2.0).let { r -> r.copy(segments = r.segments.map { it.copy(points = it.points.map(::rotate)) }) }
+            assertEquals("angle=$degrees", 2000.0, LoopPlanner.localSpike(noisy, emptyList()).distanceMeters, 36.0)
+            val reversed = noisy.copy(segments = noisy.segments.map { it.copy(points = it.points.reversed()) })
+            assertEquals("reverse angle=$degrees", LoopPlanner.localSpike(noisy, emptyList()).distanceMeters,
+                LoopPlanner.localSpike(reversed, emptyList()).distanceMeters, 12.0)
+            val exact = spiked(2000.0).let { r -> r.copy(segments = r.segments.map { it.copy(points = it.points.map(::rotate)) }) }
+            assertTrue("Global repeated geometry at $degrees", LoopPlanner.retraceMeters(exact) > 1500.0)
+        }
+    }
+
+    @Test fun `distance boundaries include exactly fifteen and twenty five percent on both sides`() {
+        for (sign in listOf(-1, 1)) {
+            for ((error, expected) in listOf(0.14999 to "SELECTED", 0.15 to "SELECTED",
+                0.15001 to "SELECTED_FALLBACK", 0.24999 to "SELECTED_FALLBACK",
+                0.25 to "SELECTED_FALLBACK", 0.25001 to "TARGET_DISTANCE_FAILURE")) {
+                val candidate = route("boundary", square(4000.0), 100_000.0 + sign * (100_000.0 * error))
+                assertEquals("sign=$sign error=$error", expected,
+                    LoopPlanner.select(listOf(attempt("boundary", candidate)), 100, 1).single().status)
+            }
+        }
+    }
+
+    @Test fun `partial shared road counts retrace but below ninety percent routes stay distinct`() {
+        val partial = route("partial", listOf(start, point(4000.0, 0.0), point(2000.0, 0.0),
+            point(2000.0, 4000.0), point(0.0, 4000.0), start), 50_000.0)
+        assertEquals(2000.0, LoopPlanner.retraceMeters(partial), 100.0)
+        val first = route("first", square(4000.0), 50_000.0)
+        val second = route("second", listOf(start, point(4000.0, 0.0), point(4000.0, 6000.0),
+            point(0.0, 6000.0), start), 50_000.0)
+        val selected = LoopPlanner.select(listOf(attempt("first", first), attempt("second", second)), 50, 2)
+        assertEquals(listOf("SELECTED", "SELECTED"), selected.map { it.status })
+    }
+
+    @Test fun `all rejected candidates produce no fabricated fallback`() {
+        val decisions = LoopPlanner.select(listOf(attempt("failed", null),
+            attempt("spike", spiked(2000.0)), attempt("distance", route("distance", square(4000.0), 70_000.0))), 50, 3)
+        assertTrue(decisions.none { it.status.startsWith("SELECTED") })
+        assertEquals(listOf("NO_PATH", "LOCAL_WAYPOINT_SPIKE", "TARGET_DISTANCE_FAILURE"), decisions.map { it.status })
+        assertTrue(LoopPlanner.select(emptyList(), 50, 3).isEmpty())
+    }
 }

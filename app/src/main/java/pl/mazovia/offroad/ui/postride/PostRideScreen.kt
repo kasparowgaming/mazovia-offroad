@@ -28,18 +28,45 @@ import java.util.*
 fun PostRideScreen(
     rideRepository: RideRepository,
     feedbackRepository: FeedbackRepository,
+    rideId: String?,
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var lastRide by remember { mutableStateOf<Ride?>(null) }
+    val model = androidx.lifecycle.viewmodel.compose.viewModel<PostRideViewModel>(key = "postride-$rideId", factory =
+        object : androidx.lifecycle.ViewModelProvider.Factory {
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST") return PostRideViewModel(rideRepository, feedbackRepository) as T
+            }
+        })
+    val state by model.state.collectAsState()
+    val lastRide = state.ride
     var exportMessage by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        // Fetch the most recent ride
-        val rides = rideRepository.getAllRides().firstOrNull()
-        lastRide = rides?.maxByOrNull { it.startTimeMillis }
-    }
+    LaunchedEffect(rideId) { model.load(rideId) }
+
+    if (state.feedbackOpen) AlertDialog(
+        onDismissRequest = { if (!state.busy) model.closeFeedback() },
+        title = { Text(if (state.completed) "Jazda zapisana" else "Oceń drogę") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (state.completed) Text("Jazda zapisana. Brak pytań do oceny.")
+                state.questions.firstOrNull()?.let { question ->
+                    Text("Pozostało pytań: ${state.questions.size}")
+                    Text("Odcinek: %.4f, %.4f → %.4f, %.4f".format(question.segmentStart.latitude,
+                        question.segmentStart.longitude, question.segmentEnd.latitude, question.segmentEnd.longitude))
+                    Text(question.question.questionPl)
+                    question.question.allowedAnswers.forEach { answer ->
+                        TextButton(onClick = { model.answer(answer) }, enabled = !state.busy) { Text(answer.displayPl) }
+                    }
+                }
+                state.error?.let { Text(it) }
+            }
+        },
+        confirmButton = { TextButton(onClick = model::closeFeedback, enabled = !state.busy) {
+            Text(if (state.completed) "Gotowe" else "Dokończ później")
+        } }
+    )
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("application/gpx+xml")
@@ -48,7 +75,7 @@ fun PostRideScreen(
             scope.launch {
                 try {
                     lastRide?.let { ride ->
-                        context.contentResolver.openOutputStream(it)?.use { outStream ->
+                        requireNotNull(context.contentResolver.openOutputStream(it)).use { outStream ->
                             GpxWriter().writeTrack(
                                 outputStream = outStream,
                                 trackName = "Mazovia Offroad Ride",
@@ -58,7 +85,8 @@ fun PostRideScreen(
                         exportMessage = "Wyeksportowano GPX"
                     }
                 } catch (e: Exception) {
-                    exportMessage = "Błąd eksportu: ${e.message}"
+                    android.util.Log.e("PostRide", "Export failed", e)
+                    exportMessage = pl.mazovia.offroad.ui.RiderMessages.EXPORT
                 }
             }
         }
@@ -83,8 +111,7 @@ fun PostRideScreen(
         val durationMins = lastRide?.let { it.durationSeconds / 60 } ?: 0
         val speedKmh = if (durationMins > 0) distanceKm / (durationMins / 60.0) else 0.0
         
-        // Approximate off-road since we don't have map-matched tracks yet
-        val offroadPct = if (distanceKm > 0) 100 else 0 
+        val offroadPct = lastRide?.metrics?.measuredOffRoadPercentage
 
         item {
             Card(
@@ -99,13 +126,13 @@ fun PostRideScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text(
-                        text = if (lastRide != null) "$offroadPct %" else "-- %",
+                        text = offroadPct?.let { "%.0f %%".format(it) } ?: "Brak danych",
                         style = MaterialTheme.typography.displayLarge,
                         fontWeight = FontWeight.Bold,
                         color = MazoviaColors.ForestGreen
                     )
                     Text(
-                        text = "terenu",
+                        text = if (offroadPct == null) "Trasa nie została dopasowana" else "terenu",
                         style = MaterialTheme.typography.titleMedium
                     )
                 }
@@ -131,9 +158,14 @@ fun PostRideScreen(
 
         item {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                state.error?.let {
+                    Text(it)
+                    TextButton(onClick = { model.load(rideId) }, enabled = !state.busy) { Text("Ponów") }
+                }
                 MazoviaButton(
                     text = "Zapisz i oceń drogi",
-                    onClick = { /* Could launch feedback form */ },
+                    onClick = model::openFeedback,
+                    enabled = lastRide != null && !state.busy,
                     modifier = Modifier.fillMaxWidth()
                 )
                 MazoviaButton(

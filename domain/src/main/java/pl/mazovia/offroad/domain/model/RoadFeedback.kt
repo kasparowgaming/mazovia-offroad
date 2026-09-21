@@ -25,7 +25,16 @@ enum class FeedbackQuestion(
     SURFACE_QUALITY("Jaka nawierzchnia?"),
     ROAD_EXISTS("Czy droga istnieje?"),
     ROAD_PASSABLE("Czy droga jest przejezdna motocyklem?"),
-    SURFACE_MATCH("Czy nawierzchnia zgadza się z mapą?")
+    SURFACE_MATCH("Czy nawierzchnia zgadza się z mapą?");
+
+    val allowedAnswers: List<FeedbackAnswer>
+        get() = when (this) {
+            SURFACE_QUALITY -> listOf(FeedbackAnswer.SURFACE_ASPHALT, FeedbackAnswer.SURFACE_GRAVEL,
+                FeedbackAnswer.SURFACE_DIRT, FeedbackAnswer.SURFACE_SAND, FeedbackAnswer.SURFACE_MUD,
+                FeedbackAnswer.SURFACE_OTHER)
+            ROAD_PASSABLE -> listOf(FeedbackAnswer.EASY, FeedbackAnswer.DIFFICULT, FeedbackAnswer.IMPASSABLE)
+            else -> listOf(FeedbackAnswer.YES, FeedbackAnswer.NO)
+        }
 }
 
 @Serializable

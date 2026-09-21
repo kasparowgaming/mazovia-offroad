@@ -25,6 +25,15 @@ data class SavedRouteInfo(
 class RouteRepository(
     private val savedRouteDao: SavedRouteDao
 ) {
+    suspend fun openRoute(id: String): pl.mazovia.offroad.domain.model.Route {
+        val entity = requireNotNull(getRouteById(id))
+        val route = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
+            .decodeFromString(pl.mazovia.offroad.domain.model.Route.serializer(), entity.routeDataJson)
+        require(route.allPoints.size >= 2 && route.totalDistanceMeters.isFinite() && route.totalDistanceMeters > 0)
+        require(route.allPoints.all { it.latitude.isFinite() && it.longitude.isFinite() &&
+            it.latitude in -90.0..90.0 && it.longitude in -180.0..180.0 })
+        return route
+    }
     fun getAllRoutes(): Flow<List<SavedRouteInfo>> = savedRouteDao.getAllRoutes().map { entities ->
         entities.map { it.toInfo() }
     }

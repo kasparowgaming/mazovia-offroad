@@ -46,6 +46,7 @@ fun MazoviaNavHost(
             PostRideScreen(
                 rideRepository = app.rideRepository,
                 feedbackRepository = app.feedbackRepository,
+                rideId = appModeManager.completedRideId,
                 onDismiss = { appModeManager.switchToPlanning() }
             )
         }
@@ -65,6 +66,7 @@ private fun PlanningShell(
 ) {
     var selectedTab by remember { mutableStateOf(MazoviaTab.MAPA) }
     var showOfflineData by remember { mutableStateOf(false) }
+    var previewRoute by remember { mutableStateOf<pl.mazovia.offroad.domain.model.Route?>(null) }
 
     if (showOfflineData) {
         pl.mazovia.offroad.ui.more.OfflineDataScreen(
@@ -96,18 +98,23 @@ private fun PlanningShell(
                     appModeManager = appModeManager,
                     locationClient = app.locationClient,
                     placeSearchRepository = app.placeSearchRepository,
-                    onNavigateToOfflineData = { showOfflineData = true }
+                    onNavigateToOfflineData = { showOfflineData = true },
+                    previewRoute = previewRoute,
+                    onPreviewConsumed = { previewRoute = null }
                 )
                 MazoviaTab.TRASY -> RoutesScreen(
                     routingEngine = app.routingEngine,
                     routeRepository = app.routeRepository,
                     navigationManager = app.navigationManager,
                     appModeManager = appModeManager,
-                    locationClient = app.locationClient
+                    locationClient = app.locationClient,
+                    onPointToPoint = { selectedTab = MazoviaTab.MAPA },
+                    onOpenRoute = { previewRoute = it; selectedTab = MazoviaTab.MAPA }
                 )
                 MazoviaTab.JAZDY -> RidesScreen(
                     rideRepository = app.rideRepository,
-                    feedbackRepository = app.feedbackRepository
+                    feedbackRepository = app.feedbackRepository,
+                    onOpenRide = { appModeManager.switchToPostRide(it) }
                 )
                 MazoviaTab.WIECEJ -> MoreScreen(
                     routingEngine = app.routingEngine,

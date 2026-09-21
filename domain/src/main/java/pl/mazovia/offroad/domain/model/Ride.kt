@@ -40,8 +40,14 @@ data class RideMetrics(
     val durationSeconds: Long,
     val newKilometersMeters: Double = 0.0,
     val explorationPercentage: Double = 0.0,
-    val surfaceDistribution: Map<Surface, Double> = emptyMap()
+    val surfaceDistribution: Map<Surface, Double> = emptyMap(),
+    // Set only by a reliable recorded-track classification, never by the planned route.
+    val terrainClassificationAvailable: Boolean = false
 ) {
+    val measuredOffRoadPercentage: Double?
+        get() = if (terrainClassificationAvailable && totalDistanceMeters > 0 &&
+            totalDistanceMeters.isFinite() && offRoadDistanceMeters.isFinite() &&
+            offRoadDistanceMeters in 0.0..totalDistanceMeters) offRoadPercentage else null
     val offRoadPercentage: Double
         get() = if (totalDistanceMeters > 0) (offRoadDistanceMeters / totalDistanceMeters) * 100 else 0.0
 }

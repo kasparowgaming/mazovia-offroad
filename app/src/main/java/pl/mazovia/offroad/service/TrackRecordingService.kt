@@ -54,6 +54,9 @@ class TrackRecordingService : LifecycleService() {
     }
 
     private fun startRecording() {
+        if (_recordingState.value.status == RecordingStatus.RECORDING || _recordingState.value.status == RecordingStatus.PAUSED || saveJob?.isActive == true) return
+        completion.value = RideCompletion()
+        finishedRide = null
         trackId = UUID.randomUUID().toString()
         startTimeMillis = System.currentTimeMillis()
         totalDistanceMeters = 0.0
@@ -86,52 +89,43 @@ class TrackRecordingService : LifecycleService() {
         updateNotification("NAGRYWANIE")
     }
 
+    private var saveJob: Job? = null
+    private var finishedRide: Ride? = null
+
     private fun stopRecording() {
-        android.util.Log.d("StopTrace", "TRACK_RECORDING_STOPPED=true")
-        
-        val app = application as pl.mazovia.offroad.MazoviaOffroadApp
-        
-        if (_recordingState.value.status != RecordingStatus.RECORDING) {
-            android.util.Log.d("StopTrace", "TRACK_RECORDING_STOPPED_FAILED_NOT_RECORDING (status: ${_recordingState.value.status}) - FORCING CLEAR SESSION")
-            serviceScope.launch {
-                app.sessionRepository.clearRecordingSession()
-                android.util.Log.d("StopTrace", "SESSION_FINALIZED=true")
-            }
-            stopLocationUpdates()
-            stopForeground(STOP_FOREGROUND_REMOVE)
+        if (saveJob?.isActive == true) return
+        if (trackId.isBlank()) {
+            completion.value = RideCompletion(error = "Jazda nie była nagrywana. Brak śladu do zapisania. Wróć do planowania.", canRetry = false)
             stopSelf()
             return
         }
-        
-        android.util.Log.d("RideLifecycle", "RECORDING_FINALIZED")
-        val ride = Ride(
-            id = trackId ?: return,
-            startTimeMillis = startTimeMillis,
-            endTimeMillis = System.currentTimeMillis(),
-            distanceMeters = totalDistanceMeters,
-            durationSeconds = (System.currentTimeMillis() - startTimeMillis) / 1000,
-            trackPoints = trackPoints.toList()
-        )
-
-        serviceScope.launch {
-            // Save ride
-            app.rideRepository.saveRide(ride)
-            app.rideRepository.saveTrackPoints(trackId, trackPoints)
-            app.sessionRepository.clearRecordingSession()
-            android.util.Log.d("RideLifecycle", "RIDE_PERSISTED")
-            android.util.Log.d("StopTrace", "SESSION_FINALIZED=true")
-        }
-
-        _recordingState.value = RecordingState(
-            status = RecordingStatus.STOPPED,
-            trackId = trackId,
-            startTimeMillis = startTimeMillis
-        )
         stopLocationUpdates()
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+        val app = application as MazoviaOffroadApp
+        _recordingState.value = _recordingState.value.copy(status = RecordingStatus.STOPPED)
+        completion.value = RideCompletion(saving = true)
+        saveJob = serviceScope.launch {
+            try {
+                recordingJob?.cancelAndJoin()
+                val ride = finishedRide ?: Ride(
+                    id = trackId, startTimeMillis = startTimeMillis,
+                    endTimeMillis = System.currentTimeMillis(), distanceMeters = totalDistanceMeters,
+                    durationSeconds = (System.currentTimeMillis() - startTimeMillis) / 1000,
+                    trackPoints = trackPoints.toList()
+                ).also { finishedRide = it }
+                app.rideRepository.saveCompletedRide(ride)
+                app.sessionRepository.clearRecordingSession()
+                completion.value = RideCompletion(rideId = ride.id)
+                // Keep the service alive until persistence has finished; onDestroy cancels its scope.
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            } catch (e: CancellationException) { throw e
+            } catch (e: Exception) {
+                android.util.Log.e("RideLifecycle", "Ride persistence failed", e)
+                completion.value = RideCompletion(error = pl.mazovia.offroad.ui.RiderMessages.SAVE_RIDE)
+                updateNotification("Nie zapisano jazdy. Otwórz aplikację i ponów zapis.")
+            }
+        }
     }
-
 
     private fun stopLocationUpdates() {
         recordingJob?.cancel()
@@ -189,7 +183,8 @@ class TrackRecordingService : LifecycleService() {
                 throw e
             } catch (e: Exception) {
                 // Handle permission or disabled GPS errors
-                updateNotification("BŁĄD GPS: ${e.message}")
+                android.util.Log.e("RideLifecycle", "GPS recording failed", e)
+                updateNotification("Brak pozycji GPS. Włącz lokalizację i sprawdź uprawnienia.")
             }
         }
     }
@@ -235,7 +230,12 @@ class TrackRecordingService : LifecycleService() {
         super.onDestroy()
     }
 
+    data class RideCompletion(val saving: Boolean = false, val rideId: String? = null, val error: String? = null, val canRetry: Boolean = true)
+
     companion object {
+        private val completion = MutableStateFlow(RideCompletion())
+        val rideCompletion: StateFlow<RideCompletion> = completion.asStateFlow()
+        fun prepareToFinish() { completion.value = RideCompletion(saving = true) }
         const val ACTION_START = "pl.mazovia.offroad.START_RECORDING"
         const val ACTION_PAUSE = "pl.mazovia.offroad.PAUSE_RECORDING"
         const val ACTION_RESUME = "pl.mazovia.offroad.RESUME_RECORDING"

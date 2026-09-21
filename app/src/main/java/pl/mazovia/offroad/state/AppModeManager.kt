@@ -12,6 +12,8 @@ import pl.mazovia.offroad.domain.model.AppMode
 class AppModeManager {
     private val _currentMode = MutableStateFlow(AppMode.PLANNING)
     val currentMode: StateFlow<AppMode> = _currentMode.asStateFlow()
+    var completedRideId: String? = null
+        private set
 
     fun switchToRiding() {
         android.util.Log.d("RideLifecycle", "RIDING_MODE_ENTERED")
@@ -22,7 +24,8 @@ class AppModeManager {
         _currentMode.value = AppMode.PLANNING
     }
 
-    fun switchToPostRide() {
+    fun switchToPostRide(rideId: String? = null) {
+        completedRideId = rideId
         android.util.Log.d("StopTrace", "APP_MODE_CHANGED=POST_RIDE")
         android.util.Log.d("RideLifecycle", "APP_MODE_POST_RIDE")
         _currentMode.value = AppMode.POST_RIDE

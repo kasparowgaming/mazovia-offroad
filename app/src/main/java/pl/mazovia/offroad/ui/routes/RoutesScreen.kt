@@ -26,17 +26,14 @@ fun RoutesScreen(
     routeRepository: RouteRepository,
     navigationManager: NavigationManager,
     appModeManager: AppModeManager,
-    locationClient: LocationClient
+    locationClient: LocationClient,
+    onPointToPoint: () -> Unit,
+    onOpenRoute: (pl.mazovia.offroad.domain.model.Route) -> Unit
 ) {
     var selectedSection by remember { mutableStateOf<RoutesSection?>(null) }
 
     when (selectedSection) {
-        RoutesSection.DO_PUNKTU -> PointToPointScreen(
-            onBack = { selectedSection = null },
-            routingEngine = routingEngine,
-            navigationManager = navigationManager,
-            appModeManager = appModeManager
-        )
+        RoutesSection.DO_PUNKTU -> LaunchedEffect(Unit) { onPointToPoint() }
         RoutesSection.PETLA -> LoopScreen(
             onBack = { selectedSection = null },
             routingEngine = routingEngine,
@@ -57,9 +54,10 @@ fun RoutesScreen(
         )
         RoutesSection.ZAPISANE -> SavedRoutesScreen(
             onBack = { selectedSection = null },
-            routeRepository = routeRepository
+            routeRepository = routeRepository,
+            onOpenRoute = onOpenRoute
         )
-        null -> RoutesMenu(onSelect = { selectedSection = it })
+        null -> RoutesMenu(onSelect = { if (it == RoutesSection.DO_PUNKTU) onPointToPoint() else selectedSection = it })
     }
 }
 

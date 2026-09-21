@@ -18,7 +18,8 @@ import pl.mazovia.offroad.domain.model.Ride
 @Composable
 fun RidesScreen(
     rideRepository: RideRepository,
-    feedbackRepository: FeedbackRepository
+    feedbackRepository: FeedbackRepository,
+    onOpenRide: (String) -> Unit
 ) {
     val rides by rideRepository.getAllRides().collectAsState(initial = emptyList())
 
@@ -45,14 +46,14 @@ fun RidesScreen(
         } else {
             items(rides.size) { index ->
                 val ride = rides[index]
-                RideCard(ride = ride)
+                RideCard(ride = ride, onOpen = { onOpenRide(ride.id) })
             }
         }
     }
 }
 
 @Composable
-private fun RideCard(ride: Ride) {
+private fun RideCard(ride: Ride, onOpen: () -> Unit) {
     Card(modifier = Modifier.fillMaxWidth()) {
         Column(
             modifier = Modifier.padding(16.dp),
@@ -70,7 +71,7 @@ private fun RideCard(ride: Ride) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Text(
-                        text = "${metrics.offRoadPercentage.toInt()}% terenu",
+                        text = metrics.measuredOffRoadPercentage?.let { "${it.toInt()}% terenu" } ?: "Teren: brak danych",
                         color = MazoviaColors.ForestGreen,
                         style = MaterialTheme.typography.bodyMedium
                     )
@@ -88,6 +89,7 @@ private fun RideCard(ride: Ride) {
                     color = MazoviaColors.Warning
                 )
             }
+            TextButton(onClick = onOpen) { Text("Podsumowanie i ocena dróg") }
         }
     }
 }

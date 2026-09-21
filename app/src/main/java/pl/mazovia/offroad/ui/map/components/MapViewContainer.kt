@@ -28,6 +28,7 @@ fun MapViewContainer(
     isFollowMode: Boolean = false,
     bearing: Double? = null,
     speed: Double? = null,
+    zoomSteps: Int = 0,
     onUserPan: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -38,6 +39,14 @@ fun MapViewContainer(
     }
 
     val mapViewRef = remember { mutableStateOf<MapView?>(null) }
+    val zoomConsumer = remember { MapZoomConsumer() }
+    LaunchedEffect(zoomSteps, mapViewRef.value) {
+        val map = mapViewRef.value ?: return@LaunchedEffect
+        zoomConsumer.apply(zoomSteps, map.zoomLevelDouble, map.minZoomLevel, map.maxZoomLevel) {
+            map.controller.setZoom(it)
+        }
+    }
+
     val currentPosMarker = remember { mutableStateOf<Marker?>(null) }
     val destMarker = remember { mutableStateOf<Marker?>(null) }
     val routeLineCasing = remember { mutableStateOf<Polyline?>(null) }

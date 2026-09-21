@@ -23,8 +23,10 @@ class FeedbackRepository(
     }
 
     suspend fun submitAnswer(feedbackId: String, answer: FeedbackAnswer) {
-        val feedback = feedbackDao.getUnansweredFeedback()
-        // Update through full entity update
+        val feedback = requireNotNull(feedbackDao.getFeedbackById(feedbackId))
+        require(answer in FeedbackQuestion.valueOf(feedback.question).allowedAnswers)
+        if (feedback.answer == answer.name) return // Safe retry after interrupted completion.
+        check(feedbackDao.answerPending(feedbackId, answer.name) == 1)
     }
 
     suspend fun getUnansweredCount(): Int = feedbackDao.getUnansweredCount()

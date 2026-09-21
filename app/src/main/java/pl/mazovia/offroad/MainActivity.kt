@@ -39,6 +39,9 @@ class MainActivity : ComponentActivity() {
                 appModeManager.restore(AppMode.valueOf(modeName))
             } catch (_: Exception) {}
         }
+        if (appModeManager.currentMode.value == AppMode.POST_RIDE) {
+            appModeManager.switchToPostRide(savedInstanceState?.getString("completed_ride_id"))
+        }
 
         setContent {
             LaunchedEffect(Unit) {
@@ -70,5 +73,6 @@ class MainActivity : ComponentActivity() {
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         outState.putString("app_mode", appModeManager.currentMode.value.name)
+        outState.putString("completed_ride_id", appModeManager.completedRideId)
     }
 }

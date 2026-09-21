@@ -29,6 +29,14 @@ class RideRepository(
         rideDao.insertRide(ride.toEntity())
     }
 
+    suspend fun saveCompletedRide(ride: Ride) {
+        rideDao.saveCompletedRide(ride.toEntity(), ride.trackPoints.mapIndexed { index, point ->
+            TrackPointEntity(rideId = ride.id, latitude = point.point.latitude, longitude = point.point.longitude,
+                elevation = point.point.elevation, timestampMillis = point.timestampMillis,
+                speedMps = point.speedMps, sequenceIndex = index)
+        })
+    }
+
     suspend fun updateRide(ride: Ride) {
         rideDao.updateRide(ride.toEntity())
     }
@@ -94,7 +102,8 @@ class RideRepository(
             durationSeconds = durationSeconds,
             newKilometersMeters = newKilometersMeters,
             explorationPercentage = explorationPercentage,
-            surfaceDistribution = surfaceDistribution ?: emptyMap()
+            surfaceDistribution = surfaceDistribution ?: emptyMap(),
+            terrainClassificationAvailable = terrainClassificationAvailable
         ),
         routeId = routeId,
         pendingFeedback = pendingFeedback ?: emptyList()
@@ -115,7 +124,8 @@ class RideRepository(
         explorationPercentage = metrics?.explorationPercentage ?: 0.0,
         surfaceDistribution = metrics?.surfaceDistribution,
         routeId = routeId,
-        pendingFeedback = pendingFeedback
+        pendingFeedback = pendingFeedback,
+        terrainClassificationAvailable = metrics?.terrainClassificationAvailable ?: false
     )
 }
 

@@ -6,6 +6,11 @@ import pl.mazovia.offroad.data.db.entity.RoadFeedbackEntity
 
 @Dao
 interface RoadFeedbackDao {
+    @Query("UPDATE road_feedback SET answer = :answer WHERE id = :id AND answer IS NULL")
+    suspend fun answerPending(id: String, answer: String): Int
+
+    @Query("SELECT * FROM road_feedback WHERE id = :id")
+    suspend fun getFeedbackById(id: String): RoadFeedbackEntity?
     @Query("SELECT * FROM road_feedback WHERE rideId = :rideId")
     suspend fun getFeedbackForRide(rideId: String): List<RoadFeedbackEntity>
 

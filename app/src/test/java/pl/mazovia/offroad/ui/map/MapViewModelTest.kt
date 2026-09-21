@@ -1,6 +1,6 @@
 package pl.mazovia.offroad.ui.map
 
-import io.mockk.mockk
+import io.mockk.*
 import android.app.Application
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -32,16 +32,21 @@ class MapViewModelTest {
     @Before
     fun setup() {
         Dispatchers.setMain(testDispatcher)
+        mockkStatic(android.util.Log::class)
+        every { android.util.Log.d(any(), any()) } returns 0
+        every { android.util.Log.e(any(), any(), any()) } returns 0
     }
 
     @After
     fun teardown() {
         Dispatchers.resetMain()
+        unmockkAll()
     }
 
     class AdversarialRoutingEngine : RoutingEngine {
         val requests = mutableListOf<kotlinx.coroutines.CompletableDeferred<RoutingResult>>()
         val cancelledCompletions = mutableListOf<kotlinx.coroutines.CompletableDeferred<RoutingResult>>()
+        var lastOrigin: GeoPoint? = null
         var lastRequestedProfile: RoutingProfile? = null
 
         override suspend fun isReady(): Boolean = true
@@ -61,6 +66,7 @@ class MapViewModelTest {
             profile: RoutingProfile,
             waypoints: List<GeoPoint>
         ): RoutingResult {
+            lastOrigin = origin
             lastRequestedProfile = profile
             val deferred = kotlinx.coroutines.CompletableDeferred<RoutingResult>()
             requests.add(deferred)
@@ -82,15 +88,20 @@ class MapViewModelTest {
         }
     }
 
-    private fun createViewModel(engine: AdversarialRoutingEngine): MapViewModel {
-        return MapViewModel(
+    private fun createViewModel(engine: AdversarialRoutingEngine, gps: Boolean = true): MapViewModel {
+        val location = mockk<LocationClient>()
+        every { location.getLocationUpdates(any()) } returns if (gps)
+            flowOf(LocationUpdate(GeoPoint(52.1567802, 22.3448868), null, null)) else kotlinx.coroutines.flow.emptyFlow()
+        val model = MapViewModel(
             routingEngine = engine,
             navigationManager = mockk(relaxed = true),
             appModeManager = mockk(relaxed = true),
-            locationClient = mockk(relaxed = true),
+            locationClient = location,
             placeSearchRepository = mockk(relaxed = true),
             application = mockk(relaxed = true)
         )
+        testDispatcher.scheduler.runCurrent()
+        return model
     }
 
     @Test
@@ -189,4 +200,45 @@ class MapViewModelTest {
         runCurrent()
         assertFalse(viewModel.uiState.value.isLoading)
     }
+    @Test fun `missing GPS never requests a Warsaw route and leaves no stale preview`() = runTest {
+        val engine = AdversarialRoutingEngine()
+        val model = createViewModel(engine, gps = false)
+        model.previewSavedRoute(engine.createRoute(1000.0).route)
+        model.setDestination(GeoPoint(52.2, 22.3))
+        runCurrent()
+        assertTrue(engine.requests.isEmpty())
+        assertNull(model.uiState.value.calculatedRoute)
+        assertFalse(model.uiState.value.showRoutePanel)
+        assertEquals(pl.mazovia.offroad.ui.RiderMessages.GPS, model.uiState.value.error)
+    }
+
+    @Test fun `destination to preview to Prowadz starts navigation recording and riding`() = runTest {
+        val engine = AdversarialRoutingEngine()
+        val navigation = mockk<NavigationManager>(relaxed = true)
+        val mode = AppModeManager()
+        val location = mockk<LocationClient>()
+        val position = GeoPoint(52.1567802, 22.3448868)
+        every { location.getLocationUpdates(any()) } returns flowOf(LocationUpdate(position, null, null))
+        var recordings = 0
+        val model = MapViewModel(engine, navigation, mode, location, mockk(relaxed = true),
+            mockk(relaxed = true), hasLocationPermission = { true }, startRecording = { recordings++ })
+        runCurrent()
+        model.setDestination(GeoPoint(52.2, 22.3))
+        runCurrent()
+        val route = engine.createRoute(25331.84).route
+        engine.requests.single().complete(RoutingResult.Success(route))
+        runCurrent()
+        assertEquals(position, engine.lastOrigin)
+        assertTrue(model.uiState.value.showRoutePanel)
+        model.startNavigation()
+        verify { navigation.startNavigation(route) }
+        assertEquals(1, recordings)
+        assertEquals(AppMode.RIDING, mode.currentMode.value)
+        // Reopening a saved route uses exactly that route, without asking the engine to recalculate.
+        model.previewSavedRoute(route)
+        model.startNavigation()
+        assertEquals(1, engine.requests.size)
+        verify(exactly = 2) { navigation.startNavigation(route) }
+    }
+
 }

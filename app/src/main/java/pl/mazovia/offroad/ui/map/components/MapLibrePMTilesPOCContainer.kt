@@ -38,6 +38,7 @@ fun MapLibrePMTilesPOCContainer(
     isFollowMode: Boolean = false,
     bearing: Double? = null,
     speed: Double? = null,
+    zoomSteps: Int = 0,
     onUserPan: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -58,6 +59,15 @@ fun MapLibrePMTilesPOCContainer(
     
     // Explicit styleReady state to fix race conditions
     var styleReady by remember { mutableStateOf(false) }
+
+    val zoomConsumer = remember { MapZoomConsumer() }
+    LaunchedEffect(zoomSteps, styleReady) {
+        if (!styleReady) return@LaunchedEffect
+        val map = mapLibreMapRef.value ?: return@LaunchedEffect
+        zoomConsumer.apply(zoomSteps, map.cameraPosition.zoom, map.minZoomLevel, map.maxZoomLevel) {
+            map.moveCamera(CameraUpdateFactory.zoomTo(it))
+        }
+    }
 
     val routeSourceId = "route-source"
     val routeCasingLayerId = "route-casing-layer"

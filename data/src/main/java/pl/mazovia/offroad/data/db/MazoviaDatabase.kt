@@ -16,7 +16,7 @@ import pl.mazovia.offroad.data.db.converter.Converters
         NavigationSessionEntity::class,
         RecordingSessionEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -41,7 +41,11 @@ abstract class MazoviaDatabase : RoomDatabase() {
                     MazoviaDatabase::class.java,
                     DATABASE_NAME
                 )
-                .fallbackToDestructiveMigration()
+                .addMigrations(object : androidx.room.migration.Migration(1, 2) {
+                    override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+                        db.execSQL("ALTER TABLE rides ADD COLUMN terrainClassificationAvailable INTEGER NOT NULL DEFAULT 0")
+                    }
+                })
                 .build()
                 .also { INSTANCE = it }
             }

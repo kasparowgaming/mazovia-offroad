@@ -38,6 +38,7 @@ fun MapLibreViewContainer(
     isFollowMode: Boolean = false,
     bearing: Double? = null,
     speed: Double? = null,
+    zoomSteps: Int = 0,
     onUserPan: () -> Unit = {}
 ) {
     val context = LocalContext.current
@@ -55,6 +56,16 @@ fun MapLibreViewContainer(
     
     // Explicit styleReady state to fix race conditions
     var styleReady by remember { mutableStateOf(false) }
+    var lastCenterRequest by remember { mutableStateOf<Long?>(null) }
+
+    val zoomConsumer = remember { MapZoomConsumer() }
+    LaunchedEffect(zoomSteps, styleReady) {
+        if (!styleReady) return@LaunchedEffect
+        val map = mapLibreMapRef.value ?: return@LaunchedEffect
+        zoomConsumer.apply(zoomSteps, map.cameraPosition.zoom, map.minZoomLevel, map.maxZoomLevel) {
+            map.moveCamera(CameraUpdateFactory.zoomTo(it))
+        }
+    }
 
     val routeSourceId = "route-source"
     val routeCasingLayerId = "route-casing-layer"
@@ -208,17 +219,18 @@ fun MapLibreViewContainer(
             
             val cameraPosition = CameraPosition.Builder()
                 .target(LatLng(targetLat, targetLon))
-                .zoom(17.5)
+                .zoom(if (lastCenterRequest != centerRequest) 17.5 else mapLibreMap.cameraPosition.zoom)
                 .bearing(targetBearing)
                 .build()
                 
             mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 1000)
-        } else if (centerRequest > 0L && currentPosition != null) {
+        } else if (centerRequest > 0L && lastCenterRequest != centerRequest && currentPosition != null) {
             val cameraPosition = CameraPosition.Builder()
                 .target(LatLng(currentPosition.latitude, currentPosition.longitude))
                 .build()
             mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(cameraPosition), 500)
         }
+        lastCenterRequest = centerRequest
     }
 
     DisposableEffect(lifecycleOwner) {

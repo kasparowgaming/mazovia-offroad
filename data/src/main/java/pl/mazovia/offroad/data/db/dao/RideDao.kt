@@ -6,6 +6,14 @@ import pl.mazovia.offroad.data.db.entity.RideEntity
 
 @Dao
 interface RideDao {
+    @Insert
+    suspend fun insertCompletedPoints(points: List<pl.mazovia.offroad.data.db.entity.TrackPointEntity>)
+
+    @Transaction
+    suspend fun saveCompletedRide(ride: RideEntity, points: List<pl.mazovia.offroad.data.db.entity.TrackPointEntity>) {
+        insertRide(ride)
+        insertCompletedPoints(points)
+    }
     @Query("SELECT * FROM rides ORDER BY startTimeMillis DESC")
     fun getAllRides(): Flow<List<RideEntity>>
 

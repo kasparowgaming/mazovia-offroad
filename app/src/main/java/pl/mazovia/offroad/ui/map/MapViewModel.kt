@@ -13,6 +13,7 @@ import pl.mazovia.offroad.domain.routing.RoutingEngine
 import pl.mazovia.offroad.domain.routing.RoutingResult
 import pl.mazovia.offroad.navigation.NavigationManager
 import pl.mazovia.offroad.state.AppModeManager
+import pl.mazovia.offroad.ui.RiderMessages
 
 data class MapUiState(
     val currentPosition: GeoPoint? = null,
@@ -42,7 +43,17 @@ class MapViewModel(
     private val appModeManager: AppModeManager,
     private val locationClient: pl.mazovia.offroad.domain.location.LocationClient,
     private val placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository,
-    private val application: android.app.Application
+    private val application: android.app.Application,
+    private val hasLocationPermission: () -> Boolean = {
+        androidx.core.content.ContextCompat.checkSelfPermission(application, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+    },
+    private val startRecording: () -> Unit = {
+        val intent = android.content.Intent(application, pl.mazovia.offroad.service.TrackRecordingService::class.java).apply {
+            action = pl.mazovia.offroad.service.TrackRecordingService.ACTION_START
+        }
+        androidx.core.content.ContextCompat.startForegroundService(application, intent)
+    }
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(MapUiState())
@@ -62,7 +73,8 @@ class MapViewModel(
     }
 
     fun startTracking() {
-        viewModelScope.launch {
+        if (locationJob?.isActive == true) return
+        locationJob = viewModelScope.launch {
             try {
                 locationClient.getLocationUpdates(2000L).collect { update ->
                     _uiState.update { it.copy(currentPosition = update.point) }
@@ -72,8 +84,10 @@ class MapViewModel(
                         centerOnPosition()
                     }
                 }
+            } catch (e: kotlinx.coroutines.CancellationException) { throw e
             } catch (e: Exception) {
-                // Ignore for now, permissions handled by MainActivity
+                android.util.Log.e("MapViewModel", "Location unavailable", e)
+                _uiState.update { it.copy(currentPosition = null) }
             }
         }
     }
@@ -153,12 +167,12 @@ class MapViewModel(
         val route = _uiState.value.calculatedRoute ?: return
 
         if (_uiState.value.currentPosition == null) {
-            _uiState.update { it.copy(error = "Brak sygnału GPS. Poczekaj na ustalenie lokalizacji.") }
+            _uiState.update { it.copy(error = RiderMessages.GPS) }
             return
         }
 
-        if (androidx.core.content.ContextCompat.checkSelfPermission(application, android.Manifest.permission.ACCESS_FINE_LOCATION) != android.content.pm.PackageManager.PERMISSION_GRANTED) {
-            _uiState.update { it.copy(error = "Brak uprawnień do lokalizacji.") }
+        if (!hasLocationPermission()) {
+            _uiState.update { it.copy(error = RiderMessages.PERMISSION) }
             return
         }
 
@@ -169,17 +183,14 @@ class MapViewModel(
             navigationManager.startNavigation(route)
 
             // 2. Start TrackRecordingService
-            val intent = android.content.Intent(application, pl.mazovia.offroad.service.TrackRecordingService::class.java).apply {
-                action = pl.mazovia.offroad.service.TrackRecordingService.ACTION_START
-            }
-            androidx.core.content.ContextCompat.startForegroundService(application, intent)
+            startRecording()
             android.util.Log.d("RideLifecycle", "TRACK_RECORDING_SERVICE_START")
 
             // 3. Switch AppMode to RIDING
             appModeManager.switchToRiding()
         } catch (e: Exception) {
             android.util.Log.e("RideLifecycle", "Failed to start navigation: ${e.message}")
-            _uiState.update { it.copy(error = "Nie udało się rozpocząć nawigacji: ${e.message}") }
+            _uiState.update { it.copy(error = RiderMessages.NAVIGATION) }
             navigationManager.stopNavigation()
         }
     }
@@ -197,25 +208,50 @@ class MapViewModel(
     }
 
     fun centerOnPosition() {
+        startTracking()
         android.util.Log.d("MapLocationPipeline", "CURRENT_LOCATION_BUTTON_CLICKED")
         _centerRequests.value = System.currentTimeMillis()
     }
 
-    private fun calculateRoute() {
+    fun retry() {
+        centerOnPosition()
+        if (_uiState.value.calculatedRoute != null) startNavigation() else calculateRoute()
+    }
+
+    fun previewSavedRoute(route: Route) {
+        requestGeneration.incrementAndGet()
+        routeCalculationJob?.cancel()
+        _uiState.update { it.copy(destination = route.destination, destinationName = "Zapisana trasa",
+            calculatedRoute = route, routePoints = route.allPoints, routeMetrics = route.metrics,
+            selectedProfile = route.profile, showRoutePanel = true, isLoading = false, error = null, routingError = null) }
+    }
+
+    fun calculateRoute() {
         val destination = _uiState.value.destination ?: return
-        val origin = _uiState.value.currentPosition ?: GeoPoint.WARSAW
 
         val currentGen = requestGeneration.incrementAndGet()
         routeCalculationJob?.cancel()
 
+        val origin = _uiState.value.currentPosition
+        _uiState.update { it.copy(calculatedRoute = null, routePoints = emptyList(), routeMetrics = null,
+            showRoutePanel = false, routingError = null) }
+        if (origin == null) {
+            _uiState.update { it.copy(isLoading = false, error = RiderMessages.GPS) }
+            return
+        }
+
         _uiState.update { it.copy(isLoading = true, error = null) }
 
         routeCalculationJob = viewModelScope.launch {
-            val result = routingEngine.calculateRoute(
+            val result = try { routingEngine.calculateRoute(
                 origin = origin,
                 destination = destination,
                 profile = _uiState.value.selectedProfile
-            )
+            ) } catch (e: kotlinx.coroutines.CancellationException) { throw e
+            } catch (e: Exception) {
+                android.util.Log.e("MapViewModel", "Route calculation failed", e)
+                RoutingResult.Error(pl.mazovia.offroad.domain.routing.RoutingError.CALCULATION_ERROR)
+            }
 
             if (requestGeneration.get() != currentGen) {
                 // Obsolete request, ignore result
@@ -240,7 +276,7 @@ class MapViewModel(
                     _uiState.update {
                         it.copy(
                             isLoading = false,
-                            error = result.error.userMessagePl,
+                            error = RiderMessages.routing(result.error),
                             routingError = result.error
                         )
                     }
