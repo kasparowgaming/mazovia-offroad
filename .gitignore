@@ -24,3 +24,5 @@ abi.txt
 .opencode/
 .opencode/
 
+
+.tmp-gradle/
