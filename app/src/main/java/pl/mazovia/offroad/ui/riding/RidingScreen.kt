@@ -414,7 +414,7 @@ private fun LandscapeRidingLayout(
         }
     }
 
-    Row(modifier = Modifier.fillMaxSize()) {
+    Row(modifier = Modifier.fillMaxSize().systemBarsPadding()) {
         // LEFT: Guidance area
         Column(
             modifier = Modifier

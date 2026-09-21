@@ -53,12 +53,13 @@ export failures explain the failure, consequence and next action in Polish.
 Exception details remain in logs. The former “load GraphHopper graph” prompt in
 the map was replaced with rider-facing offline-data wording.
 
-**DO-PUNKTU END-TO-END: PASS (workflow tests and wiring review).** The formerly
+**DO-PUNKTU END-TO-END: PASS (workflow tests and physical device).** The formerly
 inactive Routes tab entry now opens the existing map flow. Map long-press or
 search-result selection calls setDestination; the returned route fills the preview;
 Prowadź starts navigation, recording, and RIDING mode. The JVM test checks actual
 origin, preview state, navigation route, recording callback and app mode. Android
-service and native map interaction have not been exercised on a device in this task.
+service and native map interaction were subsequently verified on the connected
+Samsung SM-S938B; see the device follow-up below.
 
 ## Validation
 
@@ -74,8 +75,8 @@ service and native map interaction have not been exercised on a device in this t
   TASK-007, including all four preserved 100/150 km geometries.
 - Graph unchanged: recursive file sizes/timestamps checked by the graph test
   and independently against the pre-validation snapshot.
-- `adb devices` returned no connected devices/emulators. Manual checks A–E were
-  therefore not run; JVM workflow tests do not substitute for native UI testing.
+- Initially no device was connected. Manual checks A–E were subsequently run
+  after the user connected the phone, as documented below.
 
 ROUTING BEHAVIOR CHANGED: NO.
 LOOP BEHAVIOR CHANGED: NO.
@@ -128,6 +129,46 @@ instead of relying on the removed Warsaw routing fallback.
 
 Build logs, graph snapshots and benchmark outputs remain ignored build artifacts.
 Commit message: `TASK-007: complete trust-critical user workflows`.
+
+## Physical-device follow-up — 2026-09-21
+
+Device: Samsung SM-S938B. Installed the debug APK while retaining app data.
+Stationary real-GPS testing; no motorcycle ride was required.
+
+- A — PASS: disabled location, selected a map destination, and observed the
+  Polish GPS explanation with retry. No route from Warsaw was produced.
+- B — PASS: opened a temporary saved route, previewed it, started following,
+  observed GPS FIX / REC GPX, finished recording, and returned to planning.
+  Export through Android's document picker produced valid GPX with 200 track
+  points. Cancelling deletion retained the route; confirming removed it.
+- C — PASS after a small fix: portrait zoom worked. In landscape, map buttons
+  overlapped Android's navigation bar. Added system-bar padding to the existing
+  landscape Row. Reinstalled and verified visible zoom changes for both buttons,
+  recenter, and uninterrupted riding/recording in landscape.
+- D — PASS: three completed stationary recordings displayed “Brak danych” and
+  “Trasa nie została dopasowana”. GPS drift produced nonzero distances, including
+  33.43 m and 53.99 m, without a fake terrain percentage. The first recording
+  persisted 51 track points before its summary opened.
+- E — PASS: two temporary existing feedback questions were presented one at a
+  time. Database inspection confirmed answers YES and EASY, no remaining pending
+  IDs, and no duplicate ride. The no-question path also showed clear completion.
+- Do punktu — PASS: Routes entry opened the map; a long-pressed destination
+  calculated a 3.0 km route from actual GPS. Prowadź opened riding mode with a
+  turn instruction and active recording, followed by a truthful saved summary.
+
+The saved-route and feedback fixtures were explicitly temporary; this does not
+claim automatic generation of feedback questions. All three test rides, both
+questions, the test route and exported file were removed afterwards. Compared
+every original ride and track-point row against the pre-test backup: all 25 rides
+and 2,917 points were preserved, along with original saved-route/feedback data.
+Restored GPS, rotation and plugged-in screen-awake settings. Left the corrected
+APK installed. Screenshots and database verification remain ignored local build
+artifacts rather than repository contents.
+
+Follow-up validation: focused app unit tests and assembleDebug PASS; full test
+suite PASS; git diff --check PASS. The only production follow-up change is
+landscape system-bar padding in RidingScreen.kt. Routing, loops and graph data
+remain unchanged.
 
 ## Files changed
 
