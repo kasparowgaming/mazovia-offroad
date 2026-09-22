@@ -22,6 +22,7 @@ import androidx.compose.ui.graphics.Color
 import pl.mazovia.offroad.designsystem.components.*
 import pl.mazovia.offroad.designsystem.theme.MazoviaColors
 import pl.mazovia.offroad.domain.model.NavigationStatus
+import pl.mazovia.offroad.domain.model.RouteSource
 import pl.mazovia.offroad.navigation.NavigationManager
 import pl.mazovia.offroad.state.AppModeManager
 import pl.mazovia.offroad.state.MapEngine
@@ -103,6 +104,8 @@ fun RidingScreen(
             navState = navState,
             recordingSession = recordingSession,
             onMore = { showMore = true },
+            onReturnToGpx = navigationManager::guideBackToGpx,
+            onContinueGpx = navigationManager::continueGpx,
             onStopNavigation = { handleStopRide() }
         )
     } else {
@@ -110,6 +113,8 @@ fun RidingScreen(
             navState = navState,
             recordingSession = recordingSession,
             onMore = { showMore = true },
+            onReturnToGpx = navigationManager::guideBackToGpx,
+            onContinueGpx = navigationManager::continueGpx,
             onStopNavigation = { handleStopRide() }
         )
     }
@@ -131,6 +136,8 @@ private fun PortraitRidingLayout(
     navState: pl.mazovia.offroad.domain.model.NavigationState,
     recordingSession: pl.mazovia.offroad.data.db.entity.RecordingSessionEntity?,
     onMore: () -> Unit,
+    onReturnToGpx: () -> Unit,
+    onContinueGpx: () -> Unit,
     onStopNavigation: () -> Unit
 ) {
     val zoom = remember { pl.mazovia.offroad.ui.map.components.MapZoomState() }
@@ -157,6 +164,7 @@ private fun PortraitRidingLayout(
             navStatus = navState.status,
             modifier = Modifier.padding(bottom = 8.dp)
         )
+        GpxRidingStatus(navState, onReturnToGpx, onContinueGpx)
 
         // TOP 2: Maneuver Card
         val nextManeuver = navState.nextManeuver
@@ -235,6 +243,9 @@ private fun PortraitRidingLayout(
             val routePoints = remember(routeId) {
                 navState.route?.allPoints ?: emptyList()
             }
+            val gpxSegments = remember(routeId) { navState.route?.originalGpx?.tracks?.flatMap { track ->
+                track.segments.map { segment -> segment.points.map { it.point } }
+            } }
             
             // POC Opt-in toggle:
             val mapEngine = MapEngine.MAPLIBRE_PMTILES_POC // Default OSMDROID, testing MapLibre for POC
@@ -245,6 +256,8 @@ private fun PortraitRidingLayout(
                         currentPosition = navState.currentPosition,
                         destination = navState.route?.destination,
                         routePoints = routePoints,
+                        routeSegments = gpxSegments,
+                        waypointPoints = navState.route?.originalGpx?.waypoints?.map { it.point } ?: emptyList(),
                         centerRequest = centerRequest,
                         zoomSteps = zoom.steps,
                         onLongPress = { },
@@ -402,6 +415,8 @@ private fun LandscapeRidingLayout(
     navState: pl.mazovia.offroad.domain.model.NavigationState,
     recordingSession: pl.mazovia.offroad.data.db.entity.RecordingSessionEntity?,
     onMore: () -> Unit,
+    onReturnToGpx: () -> Unit,
+    onContinueGpx: () -> Unit,
     onStopNavigation: () -> Unit
 ) {
     val zoom = remember { pl.mazovia.offroad.ui.map.components.MapZoomState() }
@@ -423,6 +438,7 @@ private fun LandscapeRidingLayout(
                 .background(MaterialTheme.colorScheme.surface),
             verticalArrangement = Arrangement.SpaceBetween
         ) {
+            GpxRidingStatus(navState, onReturnToGpx, onContinueGpx)
             // Maneuver
             navState.nextManeuver?.let { maneuver ->
                 ManeuverView(
@@ -469,6 +485,9 @@ private fun LandscapeRidingLayout(
             val routePoints = remember(routeId) {
                 navState.route?.allPoints ?: emptyList()
             }
+            val gpxSegments = remember(routeId) { navState.route?.originalGpx?.tracks?.flatMap { track ->
+                track.segments.map { segment -> segment.points.map { it.point } }
+            } }
             
             // POC Opt-in toggle:
             val mapEngine = MapEngine.MAPLIBRE_PMTILES_POC // Default OSMDROID, testing MapLibre for POC
@@ -479,6 +498,8 @@ private fun LandscapeRidingLayout(
                         currentPosition = navState.currentPosition,
                         destination = navState.route?.destination,
                         routePoints = routePoints,
+                        routeSegments = gpxSegments,
+                        waypointPoints = navState.route?.originalGpx?.waypoints?.map { it.point } ?: emptyList(),
                         centerRequest = centerRequest,
                         zoomSteps = zoom.steps,
                         onLongPress = { },
@@ -570,6 +591,30 @@ private fun LandscapeRidingLayout(
                             .width(200.dp)
                     )
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GpxRidingStatus(
+    state: pl.mazovia.offroad.domain.model.NavigationState,
+    onReturn: () -> Unit,
+    onContinue: () -> Unit
+) {
+    if (state.route?.source != RouteSource.IMPORTED_GPX) return
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Ślad GPX", style = MaterialTheme.typography.labelMedium)
+        if (state.status == NavigationStatus.OFF_ROUTE) {
+            Text("Poza śladem GPX", style = MaterialTheme.typography.titleMedium)
+            if (state.returnToGpx) {
+                Text("Do śladu: ${state.distanceToGpxMeters?.toInt() ?: 0} m · ${state.bearingToGpx?.toInt() ?: 0}°")
+            } else {
+                Text("Oryginalny ślad pozostaje na mapie.")
+            }
+            Row {
+                TextButton(onClick = onReturn) { Text("Wróć do śladu") }
+                TextButton(onClick = onContinue) { Text("Kontynuuj") }
             }
         }
     }

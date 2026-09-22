@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Mazovia Test GPX">
+  <metadata>
+    <name>Test Mazovia GPX z odcinkami</name>
+    <desc>Test track with 2 trksegs and 1 waypoint</desc>
+  </metadata>
+  <wpt lat="52.1666" lon="22.2840">
+    <name>Parking startowy</name>
+    <desc>Punkt startowy</desc>
+  </wpt>
+  <trk>
+    <name>Trasa testowa Mazovia</name>
+    <trkseg>
+      <trkpt lat="52.1666" lon="22.2840"></trkpt>
+      <trkpt lat="52.1670" lon="22.2850"></trkpt>
+      <trkpt lat="52.1675" lon="22.2865"></trkpt>
+      <trkpt lat="52.1682" lon="22.2875"></trkpt>
+      <trkpt lat="52.1690" lon="22.2880"></trkpt>
+      <trkpt lat="52.1698" lon="22.2885"></trkpt>
+      <trkpt lat="52.1705" lon="22.2895"></trkpt>
+      <trkpt lat="52.1712" lon="22.2910"></trkpt>
+      <trkpt lat="52.1718" lon="22.2920"></trkpt>
+      <trkpt lat="52.1725" lon="22.2930"></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="52.1740" lon="22.2950"></trkpt>
+      <trkpt lat="52.1748" lon="22.2960"></trkpt>
+      <trkpt lat="52.1755" lon="22.2965"></trkpt>
+      <trkpt lat="52.1762" lon="22.2970"></trkpt>
+      <trkpt lat="52.1770" lon="22.2980"></trkpt>
+      <trkpt lat="52.1778" lon="22.2990"></trkpt>
+      <trkpt lat="52.1785" lon="22.3000"></trkpt>
+      <trkpt lat="52.1792" lon="22.3010"></trkpt>
+      <trkpt lat="52.1800" lon="22.3020"></trkpt>
+      <trkpt lat="52.1808" lon="22.3030"></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

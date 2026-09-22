@@ -28,10 +28,17 @@ class OffRouteDetector(
     fun checkPosition(
         currentPosition: GeoPoint,
         routePoints: List<GeoPoint>
-    ): OffRouteState {
-        if (routePoints.isEmpty()) return OffRouteState.ON_ROUTE
+    ): OffRouteState = checkPositionOnSegments(currentPosition, listOf(routePoints))
 
-        val minDistance = findMinDistanceToRoute(currentPosition, routePoints)
+    /** Each inner list is one real track segment; gaps are never treated as lines. */
+    fun checkPositionOnSegments(
+        currentPosition: GeoPoint,
+        routeSegments: List<List<GeoPoint>>
+    ): OffRouteState {
+        if (routeSegments.all { it.isEmpty() }) return OffRouteState.ON_ROUTE
+
+        val minDistance = routeSegments.filter { it.isNotEmpty() }
+            .minOf { findMinDistanceToRoute(currentPosition, it) }
 
         return when (currentState) {
             OffRouteState.ON_ROUTE -> {

@@ -92,7 +92,9 @@ fun SavedRoutesScreen(
                         Column(modifier = Modifier.padding(16.dp)) {
                             Text(text = route.name, style = MaterialTheme.typography.titleMedium)
                             Text(
-                                text = "${String.format("%.1f", route.totalDistanceMeters / 1000)} km | ${route.offRoadPercentage.toInt()}% terenu",
+                                text = if (route.source == "gpx_import")
+                                    "Ślad GPX · ${String.format("%.1f", route.totalDistanceMeters / 1000)} km"
+                                else "${String.format("%.1f", route.totalDistanceMeters / 1000)} km | ${route.offRoadPercentage.toInt()}% terenu",
                                 style = MaterialTheme.typography.bodySmall
                             )
                             TextButton(onClick = { model.open(route.id, onOpenRoute) }, enabled = !busy) {

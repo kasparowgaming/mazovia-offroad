@@ -9,15 +9,17 @@ import pl.mazovia.offroad.domain.model.*
 class GpxNavigator {
 
     private var gpxPoints: List<GeoPoint> = emptyList()
+    private var segmentBreaks: Set<Int> = emptySet()
     private var currentPointIndex = 0
     private val proximityThresholdMeters = 30.0
 
     fun loadTrack(gpxData: GpxData) {
-        gpxPoints = gpxData.tracks.flatMap { track ->
-            track.segments.flatMap { segment ->
-                segment.points.map { it.point }
-            }
-        }
+        val segments = gpxData.tracks.flatMap { track -> track.segments.map { segment ->
+            segment.points.map { it.point }
+        } }
+        gpxPoints = segments.flatten()
+        segmentBreaks = segments.dropLast(1).runningFold(0) { count, segment -> count + segment.size }
+            .drop(1).toSet()
         currentPointIndex = 0
     }
 
@@ -45,8 +47,8 @@ class GpxNavigator {
         val remainingDistance = calculateRemainingDistance(currentPointIndex)
 
         // Check if arrived (near end of track)
-        val isArrived = currentPointIndex >= gpxPoints.size - 3 &&
-                distToTrack < proximityThresholdMeters
+        val isArrived = currentPointIndex == gpxPoints.lastIndex &&
+                position.distanceTo(gpxPoints.last()) < proximityThresholdMeters
 
         return when {
             isArrived -> GpxGuidance.Arrived
@@ -85,7 +87,7 @@ class GpxNavigator {
         if (fromIndex >= gpxPoints.size - 1) return 0.0
         var distance = 0.0
         for (i in fromIndex until gpxPoints.size - 1) {
-            distance += gpxPoints[i].distanceTo(gpxPoints[i + 1])
+            if (i + 1 !in segmentBreaks) distance += gpxPoints[i].distanceTo(gpxPoints[i + 1])
         }
         return distance
     }

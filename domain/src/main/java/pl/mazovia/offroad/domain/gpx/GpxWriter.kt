@@ -55,6 +55,7 @@ ${description?.let { "    <desc>${escapeXml(it)}</desc>\n" } ?: ""}    <time>${d
         route: Route,
         name: String = "Mazovia Offroad Route"
     ) {
+        route.originalGpx?.let { writeOriginal(outputStream, it); return }
         OutputStreamWriter(outputStream, Charsets.UTF_8).use { writer ->
             writer.write("""<?xml version="1.0" encoding="UTF-8"?>
 <gpx version="1.1" creator="Mazovia Offroad"
@@ -76,6 +77,39 @@ ${description?.let { "    <desc>${escapeXml(it)}</desc>\n" } ?: ""}    <time>${d
   </trk>
 </gpx>
 """)
+        }
+    }
+
+    fun writeOriginal(outputStream: OutputStream, gpx: GpxData) {
+        OutputStreamWriter(outputStream, Charsets.UTF_8).use { writer ->
+            writer.write("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<gpx version=\"1.1\" creator=\"Mazovia Offroad\" xmlns=\"http://www.topografix.com/GPX/1/1\">\n")
+            writer.write("  <metadata>\n")
+            gpx.name?.let { writer.write("    <name>${escapeXml(it)}</name>\n") }
+            gpx.description?.let { writer.write("    <desc>${escapeXml(it)}</desc>\n") }
+            writer.write("  </metadata>\n")
+            gpx.waypoints.forEach { waypoint ->
+                writer.write("  <wpt lat=\"${waypoint.point.latitude}\" lon=\"${waypoint.point.longitude}\">\n")
+                waypoint.name?.let { writer.write("    <name>${escapeXml(it)}</name>\n") }
+                waypoint.description?.let { writer.write("    <desc>${escapeXml(it)}</desc>\n") }
+                writer.write("  </wpt>\n")
+            }
+            gpx.tracks.forEach { track ->
+                writer.write("  <trk>\n")
+                track.name?.let { writer.write("    <name>${escapeXml(it)}</name>\n") }
+                track.segments.forEach { segment ->
+                    writer.write("    <trkseg>\n")
+                    segment.points.forEach { point ->
+                        writer.write("      <trkpt lat=\"${point.point.latitude}\" lon=\"${point.point.longitude}\">\n")
+                        point.point.elevation?.let { writer.write("        <ele>$it</ele>\n") }
+                        point.timestampMillis?.let { writer.write("        <time>${dateFormatter.format(Instant.ofEpochMilli(it))}</time>\n") }
+                        point.speedMps?.let { writer.write("        <speed>$it</speed>\n") }
+                        writer.write("      </trkpt>\n")
+                    }
+                    writer.write("    </trkseg>\n")
+                }
+                writer.write("  </trk>\n")
+            }
+            writer.write("</gpx>\n")
         }
     }
 

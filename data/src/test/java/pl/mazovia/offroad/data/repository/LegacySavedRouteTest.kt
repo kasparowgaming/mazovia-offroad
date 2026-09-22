@@ -8,6 +8,7 @@ import org.junit.Test
 import pl.mazovia.offroad.data.db.dao.SavedRouteDao
 import pl.mazovia.offroad.data.db.entity.SavedRouteEntity
 import pl.mazovia.offroad.domain.model.RoadDataConfidence
+import pl.mazovia.offroad.domain.model.RouteSource
 
 class LegacySavedRouteTest {
     @Test fun openRouteDecodesRemovedFieldAndDefaultsNewEvidence() = runBlocking {
@@ -37,6 +38,8 @@ class LegacySavedRouteTest {
             override suspend fun getRouteCount(): Int = 1
         }
         val route = RouteRepository(dao).openRoute("legacy-route")
+        assertEquals(RouteSource.CALCULATED_ROUTE, route.source)
+        assertEquals(null, route.originalGpx)
         assertEquals(RoadDataConfidence.UNKNOWN, route.segments.single().roadDataConfidence)
         assertEquals(111.0, route.roadDataConfidenceSummary.unknownSurfaceDistanceMeters, 0.0)
     }

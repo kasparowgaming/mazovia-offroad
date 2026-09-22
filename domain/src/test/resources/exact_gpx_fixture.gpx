@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="TASK-010">
+  <metadata><name>Dokładny ślad</name><desc>Two separated sections</desc></metadata>
+  <wpt lat="52.231234" lon="21.013456"><name>Punkt widokowy</name></wpt>
+  <trk><name>Jeden ślad</name>
+    <trkseg>
+      <trkpt lat="52.229700" lon="21.012200"><ele>100.5</ele></trkpt>
+      <trkpt lat="52.230123" lon="21.012987"/>
+      <trkpt lat="52.231234" lon="21.013456"/>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="52.250001" lon="21.030001"/>
+      <trkpt lat="52.250999" lon="21.031999"/>
+    </trkseg>
+  </trk>
+</gpx>

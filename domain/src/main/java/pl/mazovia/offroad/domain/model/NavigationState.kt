@@ -17,7 +17,10 @@ data class NavigationState(
     val remainingDistanceMeters: Double? = null,
     val remainingTimeSeconds: Long? = null,
     val currentSegmentIndex: Int = 0,
-    val isRecovered: Boolean = false
+    val isRecovered: Boolean = false,
+    val returnToGpx: Boolean = false,
+    val distanceToGpxMeters: Double? = null,
+    val bearingToGpx: Double? = null
 )
 
 @Serializable

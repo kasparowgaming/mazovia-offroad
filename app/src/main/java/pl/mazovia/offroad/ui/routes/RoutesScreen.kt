@@ -50,6 +50,7 @@ fun RoutesScreen(
         RoutesSection.GPX -> GpxScreen(
             onBack = { selectedSection = null },
             navigationManager = navigationManager,
+            routeRepository = routeRepository,
             appModeManager = appModeManager
         )
         RoutesSection.ZAPISANE -> SavedRoutesScreen(

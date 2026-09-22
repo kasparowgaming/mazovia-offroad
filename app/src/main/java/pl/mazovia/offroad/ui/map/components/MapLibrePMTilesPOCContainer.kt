@@ -22,6 +22,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.geojson.Feature
 import org.maplibre.geojson.FeatureCollection
 import org.maplibre.geojson.LineString
+import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
 import pl.mazovia.offroad.domain.model.GeoPoint
 
@@ -32,6 +33,8 @@ fun MapLibrePMTilesPOCContainer(
     currentPosition: GeoPoint?,
     destination: GeoPoint?,
     routePoints: List<GeoPoint>,
+    routeSegments: List<List<GeoPoint>>? = null,
+    waypointPoints: List<GeoPoint> = emptyList(),
     centerRequest: Long,
     onLongPress: (GeoPoint) -> Unit,
     modifier: Modifier = Modifier,
@@ -78,6 +81,8 @@ fun MapLibrePMTilesPOCContainer(
     
     val destSourceId = "dest-source"
     val destLayerId = "dest-layer"
+    val waypointSourceId = "gpx-waypoints"
+    val waypointLayerId = "gpx-waypoint-layer"
     
     val pmtilesFile = java.io.File(context.getExternalFilesDir(null), "mazowieckie_offroad.pmtiles")
     val fileExists = pmtilesFile.exists()
@@ -182,6 +187,15 @@ fun MapLibrePMTilesPOCContainer(
                             )
                         }
                         style.addLayerAbove(destLayer, routeCoreLayerId)
+                        style.addSource(GeoJsonSource(waypointSourceId))
+                        style.addLayerAbove(CircleLayer(waypointLayerId, waypointSourceId).apply {
+                            setProperties(
+                                circleColor(android.graphics.Color.parseColor("#FFB300")),
+                                circleRadius(5f),
+                                circleStrokeColor(android.graphics.Color.WHITE),
+                                circleStrokeWidth(1.5f)
+                            )
+                        }, routeCoreLayerId)
                         
                         Log.d(TAG, "STYLE_READY=true")
                         styleReady = true
@@ -217,7 +231,13 @@ fun MapLibrePMTilesPOCContainer(
             mapLibreMap.getStyle { style ->
                 val routeSource = style.getSource(routeSourceId) as? GeoJsonSource
                 if (routeSource != null) {
-                    if (routePoints.size > 1) {
+                    if (routeSegments != null) {
+                        val lines = routeSegments.filter { it.size > 1 }.map { segment ->
+                            segment.map { Point.fromLngLat(it.longitude, it.latitude) }
+                        }
+                        if (lines.isEmpty()) routeSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+                        else routeSource.setGeoJson(Feature.fromGeometry(MultiLineString.fromLngLats(lines)))
+                    } else if (routePoints.size > 1) {
                         val points = routePoints.map { Point.fromLngLat(it.longitude, it.latitude) }
                         routeSource.setGeoJson(Feature.fromGeometry(LineString.fromLngLats(points)))
                         Log.d(TAG, "ROUTE_POINTS=${points.size}")
@@ -244,6 +264,10 @@ fun MapLibrePMTilesPOCContainer(
                         destSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
                     }
                 }
+                val waypointSource = style.getSource(waypointSourceId) as? GeoJsonSource
+                waypointSource?.setGeoJson(FeatureCollection.fromFeatures(waypointPoints.map {
+                    Feature.fromGeometry(Point.fromLngLat(it.longitude, it.latitude))
+                }))
             }
             
             // MapLibrePMTilesPOCContainer padding for rider follow

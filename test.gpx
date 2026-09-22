@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="Mazovia Test">
+  <trk>
+    <name>Test Track with Gap</name>
+    <trkseg>
+      <trkpt lat="52.2" lon="21.0"></trkpt>
+      <trkpt lat="52.201" lon="21.001"></trkpt>
+    </trkseg>
+    <trkseg>
+      <trkpt lat="52.21" lon="21.01"></trkpt>
+      <trkpt lat="52.211" lon="21.011"></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

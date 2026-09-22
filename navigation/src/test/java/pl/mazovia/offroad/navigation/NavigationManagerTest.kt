@@ -76,6 +76,28 @@ class NavigationManagerTest {
         assertTrue(result is RoutingResult.Success)
     }
 
+    @Test
+    fun `GPX gap is off track and never silently rerouted`() = runTest {
+        val gpx = GpxData("Exact", null, listOf(GpxTrack("Track", listOf(
+            GpxSegment(listOf(GpxTrackPoint(GeoPoint(52.0, 21.0)), GpxTrackPoint(GeoPoint(52.0, 21.001)))),
+            GpxSegment(listOf(GpxTrackPoint(GeoPoint(52.02, 21.02)), GpxTrackPoint(GeoPoint(52.02, 21.021))))
+        ))))
+        manager.startGpxFollowing(gpx, null)
+        val original = requireNotNull(manager.navigationState.value.route)
+        assertEquals(RouteSource.IMPORTED_GPX, original.source)
+        assertEquals(gpx, original.originalGpx)
+        assertEquals(gpx.totalDistanceMeters, manager.navigationState.value.remainingDistanceMeters!!, 0.01)
+        repeat(3) { manager.updatePosition(GeoPoint(52.01, 21.01), null, 0.0) }
+        assertEquals(NavigationStatus.OFF_ROUTE, manager.navigationState.value.status)
+        manager.guideBackToGpx()
+        assertTrue(manager.navigationState.value.returnToGpx)
+        manager.continueGpx()
+        assertFalse(manager.navigationState.value.returnToGpx)
+        assertTrue(manager.reroute() is RoutingResult.Error)
+        assertSame(original, manager.navigationState.value.route)
+        assertEquals(gpx, manager.navigationState.value.route?.originalGpx)
+    }
+
     private fun createTestRoute(
         destination: GeoPoint = GeoPoint(52.0, 21.0)
     ): Route {

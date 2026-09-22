@@ -5,12 +5,12 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import pl.mazovia.offroad.domain.location.LocationClient
+import pl.mazovia.offroad.domain.gpx.GpxRoute
 import pl.mazovia.offroad.domain.model.*
 import pl.mazovia.offroad.domain.navigation.OffRouteDetector
 import pl.mazovia.offroad.domain.navigation.OffRouteState
 import pl.mazovia.offroad.domain.routing.RoutingEngine
 import pl.mazovia.offroad.domain.routing.RoutingResult
-import java.util.UUID
 
 class NavigationManager(
     private val routingEngine: RoutingEngine,
@@ -50,9 +50,12 @@ class NavigationManager(
         activeRoute = route
         activeRoutePoints = route.allPoints
         activeRoutePointDistances = DoubleArray(activeRoutePoints.size)
+        val gpxBreaks = if (route.source == RouteSource.IMPORTED_GPX)
+            route.segments.dropLast(1).runningFold(0) { count, segment -> count + segment.points.size }
+                .drop(1).toSet() else emptySet()
         var cumulativeDist = 0.0
         for (i in 1 until activeRoutePoints.size) {
-            cumulativeDist += activeRoutePoints[i - 1].distanceTo(activeRoutePoints[i])
+            if (i !in gpxBreaks) cumulativeDist += activeRoutePoints[i - 1].distanceTo(activeRoutePoints[i])
             activeRoutePointDistances[i] = cumulativeDist
         }
         
@@ -74,6 +77,10 @@ class NavigationManager(
     }
 
     fun startNavigation(route: Route) {
+        if (route.source == RouteSource.IMPORTED_GPX) {
+            startGpxFollowing(requireNotNull(route.originalGpx), route)
+            return
+        }
         initializeRouteData(route, 0)
         offRouteDetector.reset()
         _navigationState.value = NavigationState(
@@ -86,8 +93,11 @@ class NavigationManager(
     }
 
     fun startGpxFollowing(gpxData: GpxData, route: Route?) {
-        val gpxRoute = route ?: createPseudoRouteFromGpx(gpxData)
+        val gpxRoute = route?.takeIf { it.source == RouteSource.IMPORTED_GPX && it.originalGpx == gpxData }
+            ?: GpxRoute.create(gpxData)
         initializeRouteData(gpxRoute, 0)
+        lastAcceptedPosition = null
+        lastAcceptedBearing = null
         offRouteDetector.reset()
         _navigationState.value = NavigationState(
             status = NavigationStatus.FOLLOWING_GPX,
@@ -98,38 +108,12 @@ class NavigationManager(
         )
     }
 
-    private fun createPseudoRouteFromGpx(gpx: GpxData): Route {
-        val allPoints = gpx.tracks.flatMap { t -> t.segments.flatMap { s -> s.points.map { it.point } } }
-        val origin = allPoints.firstOrNull() ?: GeoPoint.WARSAW
-        val destination = allPoints.lastOrNull() ?: GeoPoint.WARSAW
-        val distance = allPoints.zipWithNext().sumOf { (a, b) -> a.distanceTo(b) }
-        val segments = listOf(
-            RouteSegment(
-                points = allPoints,
-                distanceMeters = distance,
-                surface = Surface.UNKNOWN,
-                highway = HighwayType.UNKNOWN
-            )
-        )
-        return Route(
-            id = UUID.randomUUID().toString(),
-            origin = origin,
-            destination = destination,
-            segments = segments,
-            metrics = RouteMetrics(
-                totalDistanceMeters = distance,
-                estimatedTimeSeconds = (distance / (30.0 * 1000.0 / 3600.0)).toLong(),
-                asphaltDistanceMeters = 0.0,
-                offRoadDistanceMeters = 0.0,
-                longestAsphaltConnectorMeters = 0.0,
-                surfaceDistribution = emptyMap(),
-                dataConfidenceScore = 0.0
-            ),
-            profile = pl.mazovia.offroad.domain.model.RoutingProfile.ODKRYWCZY
-        )
-    }
-
     fun restoreSession(route: Route, segmentIndex: Int) {
+        if (route.source == RouteSource.IMPORTED_GPX) {
+            startNavigation(route)
+            _navigationState.value = _navigationState.value.copy(isRecovered = true)
+            return
+        }
         initializeRouteData(route, segmentIndex)
         offRouteDetector.reset()
         val totalDist = activeRoutePointDistances.lastOrNull() ?: 0.0
@@ -174,8 +158,10 @@ class NavigationManager(
         }
 
         // Snap to point index
-        val searchStart = (currentPointIndex - 5).coerceAtLeast(0)
-        val searchEnd = (currentPointIndex + 200).coerceAtMost(activeRoutePoints.size - 1)
+        val searchStart = if (route.source == RouteSource.IMPORTED_GPX) 0
+            else (currentPointIndex - 5).coerceAtLeast(0)
+        val searchEnd = if (route.source == RouteSource.IMPORTED_GPX) activeRoutePoints.size - 1
+            else (currentPointIndex + 200).coerceAtMost(activeRoutePoints.size - 1)
         var minDist = Double.MAX_VALUE
         var nearestPointIdx = currentPointIndex
         if (activeRoutePoints.isNotEmpty()) {
@@ -190,7 +176,11 @@ class NavigationManager(
         currentPointIndex = nearestPointIdx
         currentSegmentIndex = findNearestSegmentIndex(effectivePosition, route)
 
-        val offRouteState = offRouteDetector.checkPosition(effectivePosition, activeRoutePoints)
+        val offRouteState = if (route.source == RouteSource.IMPORTED_GPX)
+            offRouteDetector.checkPositionOnSegments(effectivePosition, route.segments.map { it.points })
+        else offRouteDetector.checkPosition(effectivePosition, activeRoutePoints)
+        val nearestGpxPoint = if (route.source == RouteSource.IMPORTED_GPX)
+            activeRoutePoints.minByOrNull { effectivePosition.distanceTo(it) } else null
 
         // Find next maneuver
         var nextManeuver: Maneuver? = null
@@ -214,7 +204,10 @@ class NavigationManager(
         } else 0L
 
         val straightLineDest = effectivePosition.distanceTo(route.destination)
-        val isArrived = remainingDist < 50.0 || straightLineDest < 30.0
+        val isArrived = if (route.source == RouteSource.IMPORTED_GPX)
+            currentPointIndex == activeRoutePoints.lastIndex && straightLineDest < 30.0 &&
+                offRouteState != OffRouteState.OFF_ROUTE
+        else remainingDist < 50.0 || straightLineDest < 30.0
 
         val newStatus = when {
             isArrived -> NavigationStatus.ARRIVED
@@ -223,6 +216,7 @@ class NavigationManager(
             offRouteState == OffRouteState.ROUTE_RECOVERED -> NavigationStatus.ROUTE_RECOVERED
             offRouteState == OffRouteState.ROUTING_ERROR -> NavigationStatus.ROUTING_ERROR
             currentState.status == NavigationStatus.RECOVERED -> NavigationStatus.ON_ROUTE
+            route.source == RouteSource.IMPORTED_GPX -> NavigationStatus.FOLLOWING_GPX
             else -> NavigationStatus.ON_ROUTE
         }
 
@@ -237,12 +231,28 @@ class NavigationManager(
             remainingDistanceMeters = remainingDist,
             remainingTimeSeconds = remainingTime,
             currentSegmentIndex = currentSegmentIndex,
-            isRecovered = currentState.isRecovered && newStatus == NavigationStatus.RECOVERED
+            isRecovered = currentState.isRecovered && newStatus == NavigationStatus.RECOVERED,
+            returnToGpx = currentState.returnToGpx && newStatus == NavigationStatus.OFF_ROUTE,
+            distanceToGpxMeters = nearestGpxPoint?.let { effectivePosition.distanceTo(it) },
+            bearingToGpx = nearestGpxPoint?.let { effectivePosition.bearingTo(it) }
         )
+    }
+
+    fun guideBackToGpx() {
+        if (_navigationState.value.route?.source == RouteSource.IMPORTED_GPX)
+            _navigationState.value = _navigationState.value.copy(returnToGpx = true)
+    }
+
+    fun continueGpx() {
+        if (_navigationState.value.route?.source == RouteSource.IMPORTED_GPX)
+            _navigationState.value = _navigationState.value.copy(returnToGpx = false)
     }
 
     suspend fun reroute(): RoutingResult {
         val route = activeRoute ?: return RoutingResult.Error(
+            pl.mazovia.offroad.domain.routing.RoutingError.CALCULATION_ERROR
+        )
+        if (route.source == RouteSource.IMPORTED_GPX) return RoutingResult.Error(
             pl.mazovia.offroad.domain.routing.RoutingError.CALCULATION_ERROR
         )
         val currentPos = _navigationState.value.currentPosition ?: return RoutingResult.Error(

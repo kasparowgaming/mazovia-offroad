@@ -78,6 +78,10 @@ fun MapScreen(
             currentPosition = uiState.currentPosition,
             destination = uiState.destination,
             routePoints = uiState.routePoints,
+            routeSegments = uiState.calculatedRoute?.originalGpx?.tracks?.flatMap { track ->
+                track.segments.map { segment -> segment.points.map { it.point } }
+            },
+            waypointPoints = uiState.calculatedRoute?.originalGpx?.waypoints?.map { it.point } ?: emptyList(),
             centerRequest = centerRequest,
             onLongPress = { point -> viewModel.setDestination(point) },
             modifier = Modifier.fillMaxSize()
@@ -230,7 +234,21 @@ fun MapScreen(
 
             // 4. Route calculated successfully — existing panel
             uiState.showRoutePanel -> {
-                RouteResultPanel(
+                val gpx = uiState.calculatedRoute?.originalGpx
+                if (gpx != null) Surface(
+                    modifier = if (isLandscape) Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight()
+                        else Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                    shadowElevation = 8.dp
+                ) {
+                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Oryginalny ślad GPX", style = MaterialTheme.typography.titleMedium)
+                        Text(gpx.name ?: gpx.sourceFileName ?: "Ślad GPX")
+                        Text("${String.format("%.1f", gpx.totalDistanceMeters / 1000)} km · ${gpx.segmentCount} odcinków · ${gpx.waypoints.size} punktów orientacyjnych")
+                        pl.mazovia.offroad.designsystem.components.ProwadzButton(onClick = viewModel::startNavigation)
+                        TextButton(onClick = viewModel::dismissRoutePanel) { Text("Zamknij") }
+                    }
+                } else RouteResultPanel(
                     metrics = uiState.routeMetrics,
                     confidence = confidenceUiState,
                     profile = uiState.selectedProfile,
