@@ -41,6 +41,7 @@ fun MapScreen(
     appModeManager: AppModeManager,
     locationClient: pl.mazovia.offroad.domain.location.LocationClient,
     placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository,
+    routeRepository: pl.mazovia.offroad.data.repository.RouteRepository,
     onNavigateToOfflineData: () -> Unit = {},
     previewRoute: pl.mazovia.offroad.domain.model.Route? = null,
     onPreviewConsumed: () -> Unit = {}
@@ -56,6 +57,7 @@ fun MapScreen(
                     appModeManager, 
                     locationClient,
                     placeSearchRepository,
+                    routeRepository,
                     context.applicationContext as android.app.Application
                 ) as T
             }
@@ -70,6 +72,45 @@ fun MapScreen(
     val centerRequest by viewModel.centerRequests.collectAsState()
     LaunchedEffect(previewRoute) {
         previewRoute?.let { viewModel.previewSavedRoute(it); onPreviewConsumed() }
+    }
+
+    var showDepartureBlockerDialog by remember { mutableStateOf(false) }
+
+    if (showDepartureBlockerDialog) {
+        AlertDialog(
+            onDismissRequest = { showDepartureBlockerDialog = false },
+            title = { Text("Nie można rozpocząć jazdy") },
+            text = { Text("Brakuje niezbędnych danych offline (np. mapy bazowej lub trasy). Pobierz je przed wyjazdem.") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showDepartureBlockerDialog = false 
+                    onNavigateToOfflineData() 
+                }) {
+                    Text("Pobierz dane")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDepartureBlockerDialog = false }) {
+                    Text("Anuluj")
+                }
+            }
+        )
+    }
+
+    // readiness state is calculated below, but we need it for handleNavigate. We have to elevate readiness.
+    var readiness by remember { mutableStateOf<pl.mazovia.offroad.domain.readiness.RidePackReadiness?>(null) }
+    val evaluator = remember { pl.mazovia.offroad.domain.readiness.RidePackEvaluator(context, routingEngine) }
+    
+    LaunchedEffect(uiState.calculatedRoute) {
+        readiness = evaluator.evaluate(uiState.calculatedRoute)
+    }
+
+    val handleNavigate: () -> Unit = {
+        if (readiness?.hasEssentialDepartureBlocker == true) {
+            showDepartureBlockerDialog = true
+        } else {
+            viewModel.startNavigation()
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -234,31 +275,25 @@ fun MapScreen(
 
             // 4. Route calculated successfully — existing panel
             uiState.showRoutePanel -> {
-                var readiness by remember { mutableStateOf<pl.mazovia.offroad.domain.readiness.RidePackReadiness?>(null) }
-                val evaluator = remember { pl.mazovia.offroad.domain.readiness.RidePackEvaluator(context, routingEngine) }
-                
-                LaunchedEffect(uiState.calculatedRoute) {
-                    readiness = evaluator.evaluate(uiState.calculatedRoute)
-                }
-
-                val gpx = uiState.calculatedRoute?.originalGpx
-                if (gpx != null) Surface(
-                    modifier = if (isLandscape) Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight()
-                        else Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    shadowElevation = 8.dp
-                ) {
-                    Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Oryginalny ślad GPX", style = MaterialTheme.typography.titleMedium)
-                        Text(gpx.name ?: gpx.sourceFileName ?: "Ślad GPX")
-                        Text("${String.format("%.1f", gpx.totalDistanceMeters / 1000)} km · ${gpx.segmentCount} odcinków · ${gpx.waypoints.size} punktów orientacyjnych")
+                if (uiState.calculatedRoute?.source == pl.mazovia.offroad.domain.model.RouteSource.IMPORTED_GPX) {
+                    // Simplified view for GPX in MapScreen
+                    Column(
+                        modifier = if (isLandscape) 
+                            Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().padding(16.dp)
+                        else 
+                            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Ślad GPX", style = MaterialTheme.typography.titleMedium)
+                        Text("${uiState.calculatedRoute?.allPoints?.size ?: 0} punktów")
+                        Text("${uiState.calculatedRoute?.waypoints?.size ?: 0} punktów orientacyjnych")
                         
                         pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
                             readiness = readiness,
                             onPrepareClicked = onNavigateToOfflineData
                         )
                         
-                        pl.mazovia.offroad.designsystem.components.ProwadzButton(onClick = viewModel::startNavigation)
+                        pl.mazovia.offroad.designsystem.components.ProwadzButton(onClick = handleNavigate)
                         TextButton(onClick = viewModel::dismissRoutePanel) { Text("Zamknij") }
                     }
                 } else Column(
@@ -277,7 +312,11 @@ fun MapScreen(
                         confidence = confidenceUiState,
                         profile = uiState.selectedProfile,
                         onProfileSelect = { viewModel.selectProfile(it) },
-                        onNavigate = { viewModel.startNavigation() },
+                        onNavigate = handleNavigate,
+                        onSave = if (uiState.calculatedRoute?.source == pl.mazovia.offroad.domain.model.RouteSource.CALCULATED_ROUTE) {
+                            { viewModel.saveCalculatedRoute() }
+                        } else null,
+                        isSaved = uiState.isSaved,
                         onDismiss = { viewModel.dismissRoutePanel() },
                         modifier = Modifier.fillMaxWidth()
                     )

@@ -27,6 +27,7 @@ data class MapUiState(
     val routeMetrics: RouteMetrics? = null,
     val showRoutePanel: Boolean = false,
     val showLayers: Boolean = false,
+    val isSaved: Boolean = false,
     val isLoading: Boolean = false,
     val error: String? = null,
     val routingError: pl.mazovia.offroad.domain.routing.RoutingError? = null,
@@ -43,6 +44,7 @@ class MapViewModel(
     private val appModeManager: AppModeManager,
     private val locationClient: pl.mazovia.offroad.domain.location.LocationClient,
     private val placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository,
+    private val routeRepository: pl.mazovia.offroad.data.repository.RouteRepository,
     private val application: android.app.Application,
     private val hasLocationPermission: () -> Boolean = {
         androidx.core.content.ContextCompat.checkSelfPermission(application, android.Manifest.permission.ACCESS_FINE_LOCATION) ==
@@ -199,6 +201,18 @@ class MapViewModel(
         _uiState.update { it.copy(showRoutePanel = false) }
     }
 
+    fun saveCalculatedRoute() {
+        val route = _uiState.value.calculatedRoute ?: return
+        viewModelScope.launch {
+            try {
+                routeRepository.saveCalculatedRoute(route)
+                _uiState.update { it.copy(isSaved = true) }
+            } catch (e: Exception) {
+                _uiState.update { it.copy(error = "Nie udało się zapisać trasy. Spróbuj ponownie.") }
+            }
+        }
+    }
+
     fun toggleLayers() {
         _uiState.update { it.copy(showLayers = !it.showLayers) }
     }
@@ -223,7 +237,8 @@ class MapViewModel(
         routeCalculationJob?.cancel()
         _uiState.update { it.copy(destination = route.destination, destinationName = "Zapisana trasa",
             calculatedRoute = route, routePoints = route.allPoints, routeMetrics = route.metrics,
-            selectedProfile = route.profile, showRoutePanel = true, isLoading = false, error = null, routingError = null) }
+            selectedProfile = route.profile, showRoutePanel = true, isLoading = false, error = null, routingError = null,
+            isSaved = true) }
     }
 
     fun calculateRoute() {
@@ -234,7 +249,7 @@ class MapViewModel(
 
         val origin = _uiState.value.currentPosition
         _uiState.update { it.copy(calculatedRoute = null, routePoints = emptyList(), routeMetrics = null,
-            showRoutePanel = false, routingError = null) }
+            showRoutePanel = false, routingError = null, isSaved = false) }
         if (origin == null) {
             _uiState.update { it.copy(isLoading = false, error = RiderMessages.GPS) }
             return

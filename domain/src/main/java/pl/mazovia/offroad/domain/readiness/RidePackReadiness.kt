@@ -85,4 +85,9 @@ data class RidePackReadiness(
 
             return ComponentReadiness.READY
         }
+
+    val hasEssentialDepartureBlocker: Boolean
+        get() = resource.routeArtifact == ComponentReadiness.NOT_READY ||
+                capability.followGeometry == ComponentReadiness.NOT_READY ||
+                resource.mapResource == ComponentReadiness.NOT_READY
 }

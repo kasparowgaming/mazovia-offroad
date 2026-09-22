@@ -26,7 +26,9 @@ fun LoopScreen(
     routingEngine: RoutingEngine,
     navigationManager: NavigationManager,
     appModeManager: AppModeManager,
-    locationClient: LocationClient
+    locationClient: LocationClient,
+    routeRepository: pl.mazovia.offroad.data.repository.RouteRepository,
+    onNavigateToOfflineData: () -> Unit
 ) {
     var selectedDistance by remember { mutableIntStateOf(50) }
     var selectedProfile by remember { mutableStateOf(RoutingProfile.TERENOWY) }
@@ -34,7 +36,34 @@ fun LoopScreen(
     var selectedCandidate by remember { mutableStateOf<LoopCandidate?>(null) }
     var isGenerating by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
+    var saved by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val context = androidx.compose.ui.platform.LocalContext.current
+
+    var showDepartureBlockerDialog by remember { mutableStateOf(false) }
+
+    if (showDepartureBlockerDialog) {
+        AlertDialog(
+            onDismissRequest = { showDepartureBlockerDialog = false },
+            title = { Text("Nie można rozpocząć jazdy") },
+            text = { Text("Brakuje niezbędnych danych offline (np. mapy bazowej lub trasy). Pobierz je przed wyjazdem.") },
+            confirmButton = {
+                TextButton(onClick = { 
+                    showDepartureBlockerDialog = false 
+                    onNavigateToOfflineData() 
+                }) {
+                    Text("Pobierz dane")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDepartureBlockerDialog = false }) {
+                    Text("Anuluj")
+                }
+            }
+        )
+    }
+
+    val evaluator = remember { pl.mazovia.offroad.domain.readiness.RidePackEvaluator(context, routingEngine) }
 
     Scaffold(
         topBar = {
@@ -66,25 +95,38 @@ fun LoopScreen(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    LoopParameters.DISTANCE_OPTIONS.forEach { km ->
+                    listOf(10, 25, 50, 100).forEach { dist ->
                         FilterChip(
-                            selected = selectedDistance == km,
-                            onClick = { selectedDistance = km },
-                            label = { Text("$km km") },
-                            modifier = Modifier.weight(1f)
+                            selected = selectedDistance == dist,
+                            onClick = { selectedDistance = dist },
+                            label = { Text("$dist km") }
                         )
                     }
                 }
             }
 
+            // Profile selection
             item {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    listOf(RoutingProfile.TERENOWY, RoutingProfile.ODKRYWCZY).forEach { profile ->
-                        FilterChip(selected = selectedProfile == profile,
+                Text(
+                    text = "Typ trasy",
+                    style = MaterialTheme.typography.titleMedium
+                )
+            }
+
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    RoutingProfile.entries.forEach { profile ->
+                        FilterChip(
+                            selected = selectedProfile == profile,
                             onClick = { selectedProfile = profile },
-                            label = { Text(profile.displayNamePl) })
+                            label = { Text(profile.displayNamePl) },
+                            modifier = Modifier.weight(1f)
+                        )
                     }
                 }
             }
@@ -92,7 +134,7 @@ fun LoopScreen(
             // Generate button
             item {
                 MazoviaButton(
-                    text = if (isGenerating) "Generowanie..." else "Generuj pętle",
+                    text = if (isGenerating) "Generowanie..." else "Generuj pętlę",
                     onClick = {
                         isGenerating = true
                         scope.launch {
@@ -100,6 +142,7 @@ fun LoopScreen(
                                 selectedCandidate = null
                                 candidates = emptyList()
                                 message = null
+                                saved = false
                                 val location = withTimeoutOrNull(10_000) {
                                     locationClient.getLocationUpdates(1_000).first().point
                                 }
@@ -132,28 +175,66 @@ fun LoopScreen(
                 }
 
                 items(candidates) { candidate ->
-                    Column {
-                        Text(if (candidate.status == "FALLBACK_25_PERCENT") "Dystans awaryjny (do ±25%)" else "Dystans docelowy (±15%)")
-                        Text("Powtórzony odcinek: ${"%.1f".format(candidate.retraceDistanceMeters / 1000)} km")
+                    Column(modifier = Modifier.fillMaxWidth()) {
+                        Text(
+                            text = if (candidate.status == "FALLBACK_25_PERCENT") "Dystans awaryjny (do ±25%)" else "Dystans docelowy (±15%)",
+                            style = MaterialTheme.typography.bodySmall
+                        )
+                        Text(
+                            text = "Powtórzony odcinek: ${"%.1f".format(candidate.retraceDistanceMeters / 1000)} km",
+                            style = MaterialTheme.typography.bodySmall
+                        )
                         RouteMetricsCard(
                             offRoadPercentage = candidate.route.metrics.offRoadPercentage,
                             asphaltPercentage = candidate.route.metrics.asphaltPercentage,
-                            totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000,
+                            totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000.0,
                             estimatedTimeMinutes = candidate.route.metrics.estimatedTimeSeconds / 60,
-                            longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000,
+                            longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000.0,
                             isSelected = selectedCandidate == candidate,
-                            onSelect = { selectedCandidate = candidate }
+                            onSelect = { selectedCandidate = candidate; saved = false }
                         )
                     }
                 }
+            }
 
-                selectedCandidate?.let { candidate ->
-                    item {
+            selectedCandidate?.let { candidate ->
+                item {
+                    var readiness by remember { mutableStateOf<pl.mazovia.offroad.domain.readiness.RidePackReadiness?>(null) }
+                    LaunchedEffect(candidate.route) {
+                        readiness = evaluator.evaluate(candidate.route)
+                    }
+                    
+                    pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
+                        readiness = readiness,
+                        onPrepareClicked = onNavigateToOfflineData
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        TextButton(
+                            onClick = {
+                                scope.launch {
+                                    try {
+                                        routeRepository.saveCalculatedRoute(candidate.route, "Pętla ${selectedDistance}km")
+                                        saved = true
+                                    } catch (e: Exception) {
+                                        message = "Błąd zapisu"
+                                    }
+                                }
+                            },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text(if (saved) "Zapisano" else "Zapisz pętlę")
+                        }
                         ProwadzButton(
                             onClick = {
-                                navigationManager.startNavigation(candidate.route)
-                                appModeManager.switchToRiding()
-                            }
+                                if (readiness?.hasEssentialDepartureBlocker == true) {
+                                    showDepartureBlockerDialog = true
+                                } else {
+                                    navigationManager.startNavigation(candidate.route)
+                                    appModeManager.switchToRiding()
+                                }
+                            },
+                            modifier = Modifier.weight(2f)
                         )
                     }
                 }

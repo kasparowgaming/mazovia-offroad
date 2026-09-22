@@ -98,6 +98,7 @@ class MapViewModelTest {
             appModeManager = mockk(relaxed = true),
             locationClient = location,
             placeSearchRepository = mockk(relaxed = true),
+            routeRepository = mockk(relaxed = true),
             application = mockk(relaxed = true)
         )
         testDispatcher.scheduler.runCurrent()
@@ -221,7 +222,7 @@ class MapViewModelTest {
         every { location.getLocationUpdates(any()) } returns flowOf(LocationUpdate(position, null, null))
         var recordings = 0
         val model = MapViewModel(engine, navigation, mode, location, mockk(relaxed = true),
-            mockk(relaxed = true), hasLocationPermission = { true }, startRecording = { recordings++ })
+            mockk(relaxed = true), mockk(relaxed = true), hasLocationPermission = { true }, startRecording = { recordings++ })
         runCurrent()
         model.setDestination(GeoPoint(52.2, 22.3))
         runCurrent()

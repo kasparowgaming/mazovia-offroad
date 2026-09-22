@@ -25,6 +25,8 @@ fun RouteResultPanel(
     profile: RoutingProfile,
     onProfileSelect: (RoutingProfile) -> Unit,
     onNavigate: () -> Unit,
+    onSave: (() -> Unit)? = null,
+    isSaved: Boolean = false,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -69,7 +71,14 @@ fun RouteResultPanel(
             }
             confidence?.let { RoadConfidenceSection(it) }
             Spacer(Modifier.height(8.dp))
-            ProwadzButton(onClick = onNavigate)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (onSave != null) {
+                    TextButton(onClick = onSave, modifier = Modifier.weight(1f), enabled = !isSaved) {
+                        Text(if (isSaved) "Zapisano" else "Zapisz trasę")
+                    }
+                }
+                ProwadzButton(onClick = onNavigate, modifier = Modifier.weight(if (onSave != null) 2f else 1f))
+            }
         }
     }
 }

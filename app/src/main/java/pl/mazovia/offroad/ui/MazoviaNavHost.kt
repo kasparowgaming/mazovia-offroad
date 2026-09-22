@@ -98,6 +98,7 @@ private fun PlanningShell(
                     appModeManager = appModeManager,
                     locationClient = app.locationClient,
                     placeSearchRepository = app.placeSearchRepository,
+                    routeRepository = app.routeRepository,
                     onNavigateToOfflineData = { showOfflineData = true },
                     previewRoute = previewRoute,
                     onPreviewConsumed = { previewRoute = null }

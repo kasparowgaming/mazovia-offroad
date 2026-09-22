@@ -173,8 +173,35 @@ fun GpxScreen(
                                 }
                             }) { Text(if (saved) "Zapisano GPX" else "Zapisz ślad") }
 
+                            var showDepartureBlockerDialog by remember { mutableStateOf(false) }
+
+                            if (showDepartureBlockerDialog) {
+                                AlertDialog(
+                                    onDismissRequest = { showDepartureBlockerDialog = false },
+                                    title = { Text("Nie można rozpocząć jazdy") },
+                                    text = { Text("Brakuje niezbędnych danych offline (np. mapy bazowej lub trasy). Pobierz je przed wyjazdem.") },
+                                    confirmButton = {
+                                        TextButton(onClick = { 
+                                            showDepartureBlockerDialog = false 
+                                            onNavigateToOfflineData() 
+                                        }) {
+                                            Text("Pobierz dane")
+                                        }
+                                    },
+                                    dismissButton = {
+                                        TextButton(onClick = { showDepartureBlockerDialog = false }) {
+                                            Text("Anuluj")
+                                        }
+                                    }
+                                )
+                            }
+
                             ProwadzButton(
                                 onClick = {
+                                    if (readiness?.hasEssentialDepartureBlocker == true) {
+                                        showDepartureBlockerDialog = true
+                                        return@ProwadzButton
+                                    }
                                     if (ContextCompat.checkSelfPermission(context,
                                             android.Manifest.permission.ACCESS_FINE_LOCATION
                                         ) != android.content.pm.PackageManager.PERMISSION_GRANTED) {

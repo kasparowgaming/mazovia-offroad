@@ -34,7 +34,7 @@ class RouteRepository(
         val route = GpxRoute.create(gpx)
         saveRoute(SavedRouteEntity(
             id = route.id,
-            name = gpx.name ?: gpx.tracks.single().name ?: gpx.sourceFileName ?: "Ślad GPX",
+            name = gpx.name ?: gpx.tracks.singleOrNull()?.name ?: gpx.sourceFileName ?: "Ślad GPX",
             createdAtMillis = System.currentTimeMillis(),
             originLat = route.origin.latitude,
             originLon = route.origin.longitude,
@@ -48,6 +48,25 @@ class RouteRepository(
         ))
         return route
     }
+
+    suspend fun saveCalculatedRoute(route: pl.mazovia.offroad.domain.model.Route, name: String? = null) {
+        val baseName = name ?: "Trasa ${java.text.SimpleDateFormat("yyyy-MM-dd HH:mm").format(java.util.Date())}"
+        saveRoute(SavedRouteEntity(
+            id = route.id,
+            name = baseName,
+            createdAtMillis = System.currentTimeMillis(),
+            originLat = route.origin.latitude,
+            originLon = route.origin.longitude,
+            destinationLat = route.destination.latitude,
+            destinationLon = route.destination.longitude,
+            profile = route.profile.name,
+            totalDistanceMeters = route.totalDistanceMeters,
+            offRoadPercentage = route.metrics.offRoadPercentage,
+            routeDataJson = Json.encodeToString(route),
+            source = "calculated"
+        ))
+    }
+
     suspend fun openRoute(id: String): pl.mazovia.offroad.domain.model.Route {
         val entity = requireNotNull(getRouteById(id))
         val route = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }

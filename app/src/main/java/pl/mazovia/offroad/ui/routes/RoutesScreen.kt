@@ -40,7 +40,9 @@ fun RoutesScreen(
             routingEngine = routingEngine,
             navigationManager = navigationManager,
             appModeManager = appModeManager,
-            locationClient = locationClient
+            locationClient = locationClient,
+            routeRepository = routeRepository,
+            onNavigateToOfflineData = onNavigateToOfflineData
         )
         RoutesSection.LAS -> ForestScreen(
             onBack = { selectedSection = null },
