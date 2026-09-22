@@ -95,38 +95,25 @@ fun LoopScreen(
             item {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    listOf(10, 25, 50, 100).forEach { dist ->
+                    LoopParameters.DISTANCE_OPTIONS.forEach { km ->
                         FilterChip(
-                            selected = selectedDistance == dist,
-                            onClick = { selectedDistance = dist },
-                            label = { Text("$dist km") }
+                            selected = selectedDistance == km,
+                            onClick = { selectedDistance = km },
+                            label = { Text("$km km") },
+                            modifier = Modifier.weight(1f)
                         )
                     }
                 }
             }
 
-            // Profile selection
             item {
-                Text(
-                    text = "Typ trasy",
-                    style = MaterialTheme.typography.titleMedium
-                )
-            }
-
-            item {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    RoutingProfile.entries.forEach { profile ->
-                        FilterChip(
-                            selected = selectedProfile == profile,
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(RoutingProfile.TERENOWY, RoutingProfile.ODKRYWCZY).forEach { profile ->
+                        FilterChip(selected = selectedProfile == profile,
                             onClick = { selectedProfile = profile },
-                            label = { Text(profile.displayNamePl) },
-                            modifier = Modifier.weight(1f)
-                        )
+                            label = { Text(profile.displayNamePl) })
                     }
                 }
             }
@@ -134,7 +121,7 @@ fun LoopScreen(
             // Generate button
             item {
                 MazoviaButton(
-                    text = if (isGenerating) "Generowanie..." else "Generuj pętlę",
+                    text = if (isGenerating) "Generowanie..." else "Generuj pętle",
                     onClick = {
                         isGenerating = true
                         scope.launch {
@@ -175,21 +162,15 @@ fun LoopScreen(
                 }
 
                 items(candidates) { candidate ->
-                    Column(modifier = Modifier.fillMaxWidth()) {
-                        Text(
-                            text = if (candidate.status == "FALLBACK_25_PERCENT") "Dystans awaryjny (do ±25%)" else "Dystans docelowy (±15%)",
-                            style = MaterialTheme.typography.bodySmall
-                        )
-                        Text(
-                            text = "Powtórzony odcinek: ${"%.1f".format(candidate.retraceDistanceMeters / 1000)} km",
-                            style = MaterialTheme.typography.bodySmall
-                        )
+                    Column {
+                        Text(if (candidate.status == "FALLBACK_25_PERCENT") "Dystans awaryjny (do ±25%)" else "Dystans docelowy (±15%)")
+                        Text("Powtórzony odcinek: ${"%.1f".format(candidate.retraceDistanceMeters / 1000)} km")
                         RouteMetricsCard(
                             offRoadPercentage = candidate.route.metrics.offRoadPercentage,
                             asphaltPercentage = candidate.route.metrics.asphaltPercentage,
-                            totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000.0,
+                            totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000,
                             estimatedTimeMinutes = candidate.route.metrics.estimatedTimeSeconds / 60,
-                            longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000.0,
+                            longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000,
                             isSelected = selectedCandidate == candidate,
                             onSelect = { selectedCandidate = candidate; saved = false }
                         )
