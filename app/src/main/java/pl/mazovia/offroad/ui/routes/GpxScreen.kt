@@ -30,8 +30,10 @@ import pl.mazovia.offroad.state.AppModeManager
 fun GpxScreen(
     onBack: () -> Unit,
     navigationManager: NavigationManager,
+    routingEngine: pl.mazovia.offroad.domain.routing.RoutingEngine,
     routeRepository: RouteRepository,
-    appModeManager: AppModeManager
+    appModeManager: AppModeManager,
+    onNavigateToOfflineData: () -> Unit
 ) {
     var importedGpx by remember { mutableStateOf<GpxData?>(null) }
     var previewRoute by remember { mutableStateOf<Route?>(null) }
@@ -145,6 +147,19 @@ fun GpxScreen(
                                 centerRequest = 0L,
                                 onLongPress = {},
                                 modifier = Modifier.fillMaxWidth().height(260.dp)
+                            )
+
+                            // Ride Pack Readiness
+                            var readiness by remember { mutableStateOf<pl.mazovia.offroad.domain.readiness.RidePackReadiness?>(null) }
+                            val evaluator = remember { pl.mazovia.offroad.domain.readiness.RidePackEvaluator(context, routingEngine) }
+                            
+                            LaunchedEffect(route) {
+                                readiness = evaluator.evaluate(route)
+                            }
+                            
+                            pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
+                                readiness = readiness,
+                                onPrepareClicked = onNavigateToOfflineData
                             )
 
                             TextButton(onClick = {

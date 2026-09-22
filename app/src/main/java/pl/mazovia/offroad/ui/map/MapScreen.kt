@@ -234,6 +234,13 @@ fun MapScreen(
 
             // 4. Route calculated successfully — existing panel
             uiState.showRoutePanel -> {
+                var readiness by remember { mutableStateOf<pl.mazovia.offroad.domain.readiness.RidePackReadiness?>(null) }
+                val evaluator = remember { pl.mazovia.offroad.domain.readiness.RidePackEvaluator(context, routingEngine) }
+                
+                LaunchedEffect(uiState.calculatedRoute) {
+                    readiness = evaluator.evaluate(uiState.calculatedRoute)
+                }
+
                 val gpx = uiState.calculatedRoute?.originalGpx
                 if (gpx != null) Surface(
                     modifier = if (isLandscape) Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight()
@@ -245,21 +252,36 @@ fun MapScreen(
                         Text("Oryginalny ślad GPX", style = MaterialTheme.typography.titleMedium)
                         Text(gpx.name ?: gpx.sourceFileName ?: "Ślad GPX")
                         Text("${String.format("%.1f", gpx.totalDistanceMeters / 1000)} km · ${gpx.segmentCount} odcinków · ${gpx.waypoints.size} punktów orientacyjnych")
+                        
+                        pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
+                            readiness = readiness,
+                            onPrepareClicked = onNavigateToOfflineData
+                        )
+                        
                         pl.mazovia.offroad.designsystem.components.ProwadzButton(onClick = viewModel::startNavigation)
                         TextButton(onClick = viewModel::dismissRoutePanel) { Text("Zamknij") }
                     }
-                } else RouteResultPanel(
-                    metrics = uiState.routeMetrics,
-                    confidence = confidenceUiState,
-                    profile = uiState.selectedProfile,
-                    onProfileSelect = { viewModel.selectProfile(it) },
-                    onNavigate = { viewModel.startNavigation() },
-                    onDismiss = { viewModel.dismissRoutePanel() },
+                } else Column(
                     modifier = if (isLandscape)
                         Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight()
                     else
                         Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                )
+                ) {
+                    pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
+                        readiness = readiness,
+                        onPrepareClicked = onNavigateToOfflineData
+                    )
+                    
+                    RouteResultPanel(
+                        metrics = uiState.routeMetrics,
+                        confidence = confidenceUiState,
+                        profile = uiState.selectedProfile,
+                        onProfileSelect = { viewModel.selectProfile(it) },
+                        onNavigate = { viewModel.startNavigation() },
+                        onDismiss = { viewModel.dismissRoutePanel() },
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
         }
     }

@@ -108,8 +108,16 @@ private fun PlanningShell(
                     navigationManager = app.navigationManager,
                     appModeManager = appModeManager,
                     locationClient = app.locationClient,
-                    onPointToPoint = { selectedTab = MazoviaTab.MAPA },
-                    onOpenRoute = { previewRoute = it; selectedTab = MazoviaTab.MAPA }
+                    onPointToPoint = {
+                        appModeManager.switchToPlanning()
+                        selectedTab = MazoviaTab.MAPA
+                    },
+                    onOpenRoute = {
+                        previewRoute = it
+                        appModeManager.switchToPlanning()
+                        selectedTab = MazoviaTab.MAPA
+                    },
+                    onNavigateToOfflineData = { showOfflineData = true }
                 )
                 MazoviaTab.JAZDY -> RidesScreen(
                     rideRepository = app.rideRepository,

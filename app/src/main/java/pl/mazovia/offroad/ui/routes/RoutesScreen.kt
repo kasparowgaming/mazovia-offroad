@@ -28,7 +28,8 @@ fun RoutesScreen(
     appModeManager: AppModeManager,
     locationClient: LocationClient,
     onPointToPoint: () -> Unit,
-    onOpenRoute: (pl.mazovia.offroad.domain.model.Route) -> Unit
+    onOpenRoute: (pl.mazovia.offroad.domain.model.Route) -> Unit,
+    onNavigateToOfflineData: () -> Unit
 ) {
     var selectedSection by remember { mutableStateOf<RoutesSection?>(null) }
 
@@ -50,8 +51,10 @@ fun RoutesScreen(
         RoutesSection.GPX -> GpxScreen(
             onBack = { selectedSection = null },
             navigationManager = navigationManager,
+            routingEngine = routingEngine,
             routeRepository = routeRepository,
-            appModeManager = appModeManager
+            appModeManager = appModeManager,
+            onNavigateToOfflineData = onNavigateToOfflineData
         )
         RoutesSection.ZAPISANE -> SavedRoutesScreen(
             onBack = { selectedSection = null },
