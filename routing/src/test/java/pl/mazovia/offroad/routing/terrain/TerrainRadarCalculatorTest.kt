@@ -76,7 +76,7 @@ class TerrainRadarCalculatorTest {
             distanceMeters = distance,
             surface = surface,
             highway = highway,
-            dataConfidence = DataConfidence.CONFIRMED
+            hasSurfaceOrRoadClassDetail = true
         )
 
     private fun createRoute(segments: List<RouteSegment>) = Route(

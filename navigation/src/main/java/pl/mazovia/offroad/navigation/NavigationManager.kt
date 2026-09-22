@@ -108,8 +108,7 @@ class NavigationManager(
                 points = allPoints,
                 distanceMeters = distance,
                 surface = Surface.UNKNOWN,
-                highway = HighwayType.UNKNOWN,
-                dataConfidence = DataConfidence.UNKNOWN
+                highway = HighwayType.UNKNOWN
             )
         )
         return Route(

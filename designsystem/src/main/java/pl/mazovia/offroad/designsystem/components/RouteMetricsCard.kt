@@ -22,7 +22,6 @@ fun RouteMetricsCard(
     totalDistanceKm: Double,
     estimatedTimeMinutes: Long,
     longestAsphaltConnectorKm: Double,
-    dataConfidencePercentage: Double,
     isSelected: Boolean = false,
     profileName: String? = null,
     profileDescription: String? = null,
@@ -110,10 +109,6 @@ fun RouteMetricsCard(
                 )
             }
 
-            // Data confidence
-            DataConfidenceIndicator(
-                confidencePercentage = dataConfidencePercentage
-            )
         }
     }
 }

@@ -3,8 +3,8 @@ package pl.mazovia.offroad.domain.model
 import kotlinx.serialization.Serializable
 
 /**
- * Confidence level for road/surface data.
- * Distinguishes between confirmed data sources, inferred data, and ride-derived knowledge.
+ * Legacy terrain-radar/forest presentation vocabulary.
+ * RoadDataConfidence is authoritative for RouteSegment road evidence.
  */
 @Serializable
 enum class DataConfidence(

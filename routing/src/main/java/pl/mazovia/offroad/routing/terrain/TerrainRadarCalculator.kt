@@ -63,14 +63,14 @@ class TerrainRadarCalculator(
             TerrainRadarSegment(
                 surface = seg.surface,
                 distanceMeters = seg.distanceMeters,
-                confidence = seg.dataConfidence,
+                confidence = legacyConfidence(seg),
                 fraction = if (totalLookAhead > 0) seg.distanceMeters / totalLookAhead else 0.0
             )
         }
 
         // Average confidence
         val avgConfidence = if (lookAheadSegments.isNotEmpty()) {
-            val avgLevel = lookAheadSegments.sumOf { it.dataConfidence.level } / lookAheadSegments.size.toDouble()
+            val avgLevel = lookAheadSegments.sumOf { legacyConfidence(it).level } / lookAheadSegments.size.toDouble()
             when {
                 avgLevel >= 2.5 -> DataConfidence.CONFIRMED
                 avgLevel >= 1.5 -> DataConfidence.INFERRED
@@ -88,4 +88,10 @@ class TerrainRadarCalculator(
             lookAheadMeters = lookAheadMeters
         )
     }
+
+    // Adapter for the existing radar model. RoadDataConfidence remains the
+    // authoritative segment evidence; the radar's legacy enum is presentation only.
+    private fun legacyConfidence(segment: RouteSegment): DataConfidence =
+        if (segment.hasSurfaceOrRoadClassDetail)
+            DataConfidence.CONFIRMED else DataConfidence.UNKNOWN
 }

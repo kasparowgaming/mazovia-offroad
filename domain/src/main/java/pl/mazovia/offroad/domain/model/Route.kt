@@ -18,4 +18,6 @@ data class Route(
 ) {
     val totalDistanceMeters: Double get() = metrics.totalDistanceMeters
     val allPoints: List<GeoPoint> get() = segments.flatMap { it.points }
+    val roadDataConfidenceSummary: RouteDataConfidenceSummary
+        get() = RouteDataConfidenceSummary.fromSegments(segments)
 }

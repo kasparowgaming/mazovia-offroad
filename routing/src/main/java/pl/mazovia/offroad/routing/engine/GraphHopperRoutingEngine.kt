@@ -735,7 +735,14 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                         surface = surface,
                         highway = highway,
                         trackType = trackType,
-                        dataConfidence = if (surfaceTag != null || rcTag != null) DataConfidence.CONFIRMED else DataConfidence.UNKNOWN
+                        hasSurfaceOrRoadClassDetail = surfaceTag != null || rcTag != null,
+                        roadDataConfidence = RoadDataConfidenceResolver.resolve(
+                            surface = surface,
+                            trackType = trackType,
+                            highway = highway,
+                            existenceSources = setOf(RoadDataSource.ROUTING_GRAPH),
+                            surfaceSource = RoadDataSource.ROUTING_GRAPH
+                        )
                     )
                 )
             }
@@ -750,7 +757,10 @@ open class GraphHopperRoutingEngine : RoutingEngine {
                     surface = Surface.UNKNOWN,
                     highway = HighwayType.UNKNOWN,
                     trackType = TrackType.UNKNOWN,
-                    dataConfidence = DataConfidence.UNKNOWN
+                    roadDataConfidence = RoadDataConfidenceResolver.resolve(
+                        existenceSources = setOf(RoadDataSource.ROUTING_GRAPH),
+                        surfaceSource = RoadDataSource.ROUTING_GRAPH
+                    )
                 )
             )
         }

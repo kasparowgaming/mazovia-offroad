@@ -82,9 +82,14 @@ data class RouteMetrics(
                 .mapValues { (_, segs) -> segs.sumOf { it.distanceMeters } / totalDistance }
 
             // Data confidence
-            val avgConfidence = if (segments.isNotEmpty()) {
-                segments.sumOf { it.dataConfidence.level.toDouble() * it.distanceMeters } /
-                        totalDistance / 3.0 // Normalize to 0-1 (max level is 3)
+            // Compatibility projection for the existing route metric and loop score.
+            // RoadDataConfidence is authoritative evidence; this preserves the old
+            // metric's "path detail present" behavior for route selection.
+            val avgConfidence = if (totalDistance > 0.0) {
+                segments.sumOf {
+                    (if (it.hasSurfaceOrRoadClassDetail) 1.0 else 0.0) *
+                        it.distanceMeters
+                } / totalDistance
             } else 0.0
 
             var longestContinuousTerrain = 0.0

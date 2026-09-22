@@ -6,7 +6,9 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertFalse
 import org.junit.Test
-import pl.mazovia.offroad.domain.model.DataConfidence
+import pl.mazovia.offroad.domain.model.ConfidenceLevel
+import pl.mazovia.offroad.domain.model.EvidenceMethod
+import pl.mazovia.offroad.domain.model.RoadDataSource
 import pl.mazovia.offroad.domain.model.GeoPoint
 import pl.mazovia.offroad.domain.model.HighwayType
 import pl.mazovia.offroad.domain.model.Surface
@@ -91,13 +93,17 @@ class UnionBoundarySegmentationTest {
         // Segment 1: 0..2
         assertEquals(Surface.UNKNOWN, segments[0].surface)
         assertEquals(HighwayType.TRACK, segments[0].highway)
-        assertEquals(DataConfidence.CONFIRMED, segments[0].dataConfidence) // confirmed because road_class is known
+        assertEquals(ConfidenceLevel.UNKNOWN, segments[0].roadDataConfidence.surfaceEvidence.confidence)
+        assertEquals(ConfidenceLevel.MEDIUM, segments[0].roadDataConfidence.existenceEvidence.confidence)
+        assertEquals(setOf(RoadDataSource.ROUTING_GRAPH), segments[0].roadDataConfidence.existenceEvidence.sources)
+        assertEquals(EvidenceMethod.DERIVED_FROM_ROAD_CLASS, segments[0].roadDataConfidence.surfaceEvidence.method)
         assertTrue(segments[0].isOffRoad) // CASE A: missing surface + track/path = offroad
 
         // Segment 2: 2..3
         assertEquals(Surface.DIRT, segments[1].surface)
         assertEquals(HighwayType.TRACK, segments[1].highway)
-        assertEquals(DataConfidence.CONFIRMED, segments[1].dataConfidence)
+        assertEquals(ConfidenceLevel.HIGH, segments[1].roadDataConfidence.surfaceEvidence.confidence)
+        assertEquals(EvidenceMethod.ENCODED_SURFACE_VALUE, segments[1].roadDataConfidence.surfaceEvidence.method)
     }
 
     @Test
@@ -156,7 +162,7 @@ class UnionBoundarySegmentationTest {
 
         // Gap segment
         assertEquals(Surface.UNKNOWN, segments[1].surface)
-        assertEquals(DataConfidence.UNKNOWN, segments[1].dataConfidence)
+        assertEquals(ConfidenceLevel.UNKNOWN, segments[1].roadDataConfidence.surfaceEvidence.confidence)
 
         assertEquals(Surface.DIRT, segments[2].surface)
     }

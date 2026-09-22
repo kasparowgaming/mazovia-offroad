@@ -1,5 +1,6 @@
 package pl.mazovia.offroad.ui.map
 
+import android.content.res.Configuration
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -9,6 +10,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
@@ -23,6 +25,7 @@ import pl.mazovia.offroad.state.AppModeManager
 import pl.mazovia.offroad.ui.map.components.MapViewContainer
 import pl.mazovia.offroad.ui.map.components.RouteResultPanel
 import pl.mazovia.offroad.ui.map.components.SearchBar
+import pl.mazovia.offroad.ui.confidence.RoadConfidenceUiMapper
 
 /**
  * Main map screen - PLANNING mode only.
@@ -60,6 +63,10 @@ fun MapScreen(
     )
     
     val uiState by viewModel.uiState.collectAsState()
+    val isLandscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val confidenceUiState = remember(uiState.calculatedRoute) {
+        uiState.calculatedRoute?.let(RoadConfidenceUiMapper::map)
+    }
     val centerRequest by viewModel.centerRequests.collectAsState()
     LaunchedEffect(previewRoute) {
         previewRoute?.let { viewModel.previewSavedRoute(it); onPreviewConsumed() }
@@ -225,13 +232,15 @@ fun MapScreen(
             uiState.showRoutePanel -> {
                 RouteResultPanel(
                     metrics = uiState.routeMetrics,
+                    confidence = confidenceUiState,
                     profile = uiState.selectedProfile,
                     onProfileSelect = { viewModel.selectProfile(it) },
                     onNavigate = { viewModel.startNavigation() },
                     onDismiss = { viewModel.dismissRoutePanel() },
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
+                    modifier = if (isLandscape)
+                        Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight()
+                    else
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                 )
             }
         }

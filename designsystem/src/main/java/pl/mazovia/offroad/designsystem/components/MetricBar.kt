@@ -96,37 +96,3 @@ private fun SurfaceLegendItem(
         )
     }
 }
-
-/**
- * Confidence indicator using icon + text + color.
- */
-@Composable
-fun DataConfidenceIndicator(
-    confidencePercentage: Double,
-    modifier: Modifier = Modifier
-) {
-    val (color, label) = when {
-        confidencePercentage >= 70 -> MazoviaColors.ConfidenceHigh to "Wysoka pewność"
-        confidencePercentage >= 40 -> MazoviaColors.ConfidenceMedium to "Średnia pewność"
-        confidencePercentage > 0 -> MazoviaColors.ConfidenceLow to "Niska pewność"
-        else -> MazoviaColors.ConfidenceUnknown to "Brak danych"
-    }
-
-    Row(
-        modifier = modifier,
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(4.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(8.dp)
-                .clip(RoundedCornerShape(4.dp))
-                .background(color)
-        )
-        Text(
-            text = "${confidencePercentage.toInt()}% $label",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}

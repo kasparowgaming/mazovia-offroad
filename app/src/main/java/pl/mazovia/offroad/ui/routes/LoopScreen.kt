@@ -141,7 +141,6 @@ fun LoopScreen(
                             totalDistanceKm = candidate.route.metrics.totalDistanceMeters / 1000,
                             estimatedTimeMinutes = candidate.route.metrics.estimatedTimeSeconds / 60,
                             longestAsphaltConnectorKm = candidate.route.metrics.longestAsphaltConnectorMeters / 1000,
-                            dataConfidencePercentage = candidate.route.metrics.dataConfidencePercentage,
                             isSelected = selectedCandidate == candidate,
                             onSelect = { selectedCandidate = candidate }
                         )

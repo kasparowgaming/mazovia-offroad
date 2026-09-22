@@ -102,8 +102,7 @@ fun PointToPointScreen(
                                 asphaltPercentage = result.route.metrics.asphaltPercentage,
                                 totalDistanceKm = result.route.metrics.totalDistanceMeters / 1000,
                                 estimatedTimeMinutes = result.route.metrics.estimatedTimeSeconds / 60,
-                                longestAsphaltConnectorKm = result.route.metrics.longestAsphaltConnectorMeters / 1000,
-                                dataConfidencePercentage = result.route.metrics.dataConfidencePercentage
+                                longestAsphaltConnectorKm = result.route.metrics.longestAsphaltConnectorMeters / 1000
                             )
                         }
                         item {
