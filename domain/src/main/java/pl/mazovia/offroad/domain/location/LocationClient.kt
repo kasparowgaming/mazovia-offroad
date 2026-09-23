@@ -6,7 +6,10 @@ import pl.mazovia.offroad.domain.model.GeoPoint
 data class LocationUpdate(
     val point: GeoPoint,
     val speedMps: Double?,
-    val bearing: Double?
+    val bearing: Double?,
+    val accuracyMeters: Double? = null,
+    val elapsedRealtimeNanos: Long? = null,
+    val speedAccuracyMps: Double? = null
 )
 
 interface LocationClient {

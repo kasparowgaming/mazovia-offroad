@@ -48,7 +48,10 @@ class AndroidLocationClient(
                             elevation = if (location.hasAltitude()) location.altitude else null
                         ),
                         speedMps = if (location.hasSpeed()) location.speed.toDouble() else null,
-                        bearing = if (location.hasBearing()) location.bearing.toDouble() else null
+                        bearing = if (location.hasBearing()) location.bearing.toDouble() else null,
+                        accuracyMeters = if (location.hasAccuracy()) location.accuracy.toDouble() else null,
+                        elapsedRealtimeNanos = location.elapsedRealtimeNanos,
+                        speedAccuracyMps = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O && location.hasSpeedAccuracy()) location.speedAccuracyMetersPerSecond.toDouble() else null
                     )
                     trySend(update)
                 }

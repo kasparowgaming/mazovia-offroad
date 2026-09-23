@@ -33,6 +33,10 @@ class MazoviaOffroadApp : Application() {
         private set
     lateinit var routeRepository: RouteRepository
         private set
+    lateinit var roughnessRepository: RoughnessRepository
+        private set
+    lateinit var roughnessCoordinator: pl.mazovia.offroad.domain.roughness.RoughnessMeasurementCoordinator
+        private set
     lateinit var locationClient: pl.mazovia.offroad.domain.location.LocationClient
         private set
     lateinit var placeSearchRepository: pl.mazovia.offroad.domain.search.PlaceSearchRepository
@@ -53,7 +57,17 @@ class MazoviaOffroadApp : Application() {
         explorationRepository = ExplorationRepository(database.riddenSegmentDao())
         feedbackRepository = FeedbackRepository(database.roadFeedbackDao())
         routeRepository = RouteRepository(database.savedRouteDao())
+        roughnessRepository = RoughnessRepository(database)
         placeSearchRepository = pl.mazovia.offroad.data.search.NominatimPlaceSearchRepository()
+
+        // Sensor & Coordinator
+        val config = pl.mazovia.offroad.domain.roughness.RoughnessAlgorithmConfig.DEFAULT
+        val evaluator = pl.mazovia.offroad.domain.roughness.MeasurementQualityEvaluator(config)
+        val sensorSource = pl.mazovia.offroad.sensor.AndroidMotionSensorSource(this, config)
+        val debugRecorder = pl.mazovia.offroad.sensor.DynamicDebugRecorder(this)
+        roughnessCoordinator = pl.mazovia.offroad.domain.roughness.RoughnessMeasurementCoordinator(
+            config, locationClient, sensorSource, evaluator, roughnessRepository, debugRecorder
+        )
 
         // Routing
         routingEngine = GraphHopperRoutingEngine()

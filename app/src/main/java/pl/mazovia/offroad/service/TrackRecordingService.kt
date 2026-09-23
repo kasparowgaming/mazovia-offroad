@@ -34,12 +34,14 @@ class TrackRecordingService : LifecycleService() {
     private var trackId: String = ""
     private var startTimeMillis: Long = 0
     private var totalDistanceMeters: Double = 0.0
+    private var isCalibrationSession = false
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
 
         when (intent?.action) {
             ACTION_START -> startRecording()
+            ACTION_START_CALIBRATION -> startCalibration()
             ACTION_PAUSE -> pauseRecording()
             ACTION_RESUME -> resumeRecording()
             ACTION_STOP -> stopRecording()
@@ -61,6 +63,7 @@ class TrackRecordingService : LifecycleService() {
         startTimeMillis = System.currentTimeMillis()
         totalDistanceMeters = 0.0
         trackPoints.clear()
+        isCalibrationSession = false
 
         _recordingState.value = RecordingState(
             status = RecordingStatus.RECORDING,
@@ -69,12 +72,35 @@ class TrackRecordingService : LifecycleService() {
         )
 
         startForegroundWithNotification()
+        (application as MazoviaOffroadApp).roughnessCoordinator.start(trackId, isCalibration = false)
         android.util.Log.d("RideLifecycle", "FOREGROUND_SERVICE_STARTED")
         startLocationUpdates()
     }
 
+    private fun startCalibration() {
+        if (_recordingState.value.status != RecordingStatus.IDLE && _recordingState.value.status != RecordingStatus.STOPPED) return
+        completion.value = RideCompletion()
+        trackId = "calibration"
+        startTimeMillis = System.currentTimeMillis()
+        totalDistanceMeters = 0.0
+        isCalibrationSession = true
+        
+        _recordingState.value = RecordingState(
+            status = RecordingStatus.RECORDING,
+            trackId = trackId,
+            startTimeMillis = startTimeMillis
+        )
+        
+        startForegroundWithNotification()
+        (application as MazoviaOffroadApp).roughnessCoordinator.start(trackId, isCalibration = true)
+        android.util.Log.d("RideLifecycle", "FOREGROUND_CALIBRATION_STARTED")
+    }
+
     private fun pauseRecording() {
-        recordingJob?.cancel()
+        (application as MazoviaOffroadApp).roughnessCoordinator.pause()
+        if (!isCalibrationSession) {
+            recordingJob?.cancel()
+        }
         _recordingState.value = _recordingState.value.copy(
             status = RecordingStatus.PAUSED
         )
@@ -82,10 +108,13 @@ class TrackRecordingService : LifecycleService() {
     }
 
     private fun resumeRecording() {
+        (application as MazoviaOffroadApp).roughnessCoordinator.resume()
         _recordingState.value = _recordingState.value.copy(
             status = RecordingStatus.RECORDING
         )
-        startLocationUpdates()
+        if (!isCalibrationSession) {
+            startLocationUpdates()
+        }
         updateNotification("NAGRYWANIE")
     }
 
@@ -93,6 +122,14 @@ class TrackRecordingService : LifecycleService() {
     private var finishedRide: Ride? = null
 
     private fun stopRecording() {
+        (application as MazoviaOffroadApp).roughnessCoordinator.stop()
+        if (isCalibrationSession) {
+            isCalibrationSession = false
+            _recordingState.value = _recordingState.value.copy(status = RecordingStatus.STOPPED)
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+            return
+        }
         if (saveJob?.isActive == true) return
         if (trackId.isBlank()) {
             completion.value = RideCompletion(error = "Jazda nie była nagrywana. Brak śladu do zapisania. Wróć do planowania.", canRetry = false)
@@ -237,9 +274,11 @@ class TrackRecordingService : LifecycleService() {
         val rideCompletion: StateFlow<RideCompletion> = completion.asStateFlow()
         fun prepareToFinish() { completion.value = RideCompletion(saving = true) }
         const val ACTION_START = "pl.mazovia.offroad.START_RECORDING"
+        const val ACTION_START_CALIBRATION = "pl.mazovia.offroad.START_CALIBRATION"
         const val ACTION_PAUSE = "pl.mazovia.offroad.PAUSE_RECORDING"
         const val ACTION_RESUME = "pl.mazovia.offroad.RESUME_RECORDING"
         const val ACTION_STOP = "pl.mazovia.offroad.STOP_RECORDING"
         const val NOTIFICATION_ID = 1001
     }
 }
+

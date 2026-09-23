@@ -66,12 +66,21 @@ private fun PlanningShell(
 ) {
     var selectedTab by remember { mutableStateOf(MazoviaTab.MAPA) }
     var showOfflineData by remember { mutableStateOf(false) }
+    var showCalibrationScreen by remember { mutableStateOf(false) }
     var previewRoute by remember { mutableStateOf<pl.mazovia.offroad.domain.model.Route?>(null) }
 
     if (showOfflineData) {
         pl.mazovia.offroad.ui.more.OfflineDataScreen(
             routingEngine = app.routingEngine,
             onBack = { showOfflineData = false }
+        )
+        return
+    }
+    
+    if (showCalibrationScreen) {
+        pl.mazovia.offroad.ui.riding.CalibrationScreen(
+            app = app,
+            onBack = { showCalibrationScreen = false }
         )
         return
     }
@@ -127,7 +136,9 @@ private fun PlanningShell(
                 )
                 MazoviaTab.WIECEJ -> MoreScreen(
                     routingEngine = app.routingEngine,
-                    onNavigateToOfflineData = { showOfflineData = true }
+                    onNavigateToOfflineData = { showOfflineData = true },
+                    onNavigateToCalibration = { showCalibrationScreen = true },
+                    app = app
                 )
             }
         }
