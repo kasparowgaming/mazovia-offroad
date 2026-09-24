@@ -211,7 +211,7 @@ fun MapLibrePMTilesPOCContainer(
                           "id": "background",
                           "type": "background",
                           "paint": {
-                            "background-color": "#FFCDD2"
+                            "background-color": "#18181A"
                           }
                         }
                       ]
