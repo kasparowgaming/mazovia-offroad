@@ -26,6 +26,23 @@ Local symbols this design depends on were re-opened in this session and are cite
 `MapLibrePMTilesPOCContainer.kt`, `RidePackEvaluator.kt`, `MazoviaOffroadApp.kt`, `MainActivity.kt`, `AppModeManager.kt`,
 `MapViewModel.kt` (`startNavigation`), `AndroidManifest.xml`, all module `build.gradle.kts`, `settings.gradle.kts`, `tools/tiles/*`.
 
+### 0.1 TA-000B-C1 corrections
+
+Correction pass started `2026-09-24T22:25:06+02:00` on HEAD `312dae97f07ed2cab66b5eacfa6f4d9963d2672f`
+(`AUDIT.md` blob `94d5d255…`, pre-correction `DESIGN.md` blob `0bf3e413e50db4b8984a691c22e300afeff3cdf7`). Only this file changed.
+
+- **C1 — long-route coordinate architecture corrected; NavigationManager-compatible cumulative distance made explicit.**
+  Route-wide progress axis `s` = haversine cumulative distance over `route.allPoints` exactly as `NavigationManager` computes it
+  (GPX gaps = 0); candidate search uses a coarse lat/lon grid; point-to-edge projection happens in an **edge-local** tangent frame
+  (Strategy C, §6.2, §10.2). Render-scene coordinates (local ENU + floating origin) are a separate, unchanged concern.
+- **C2 — elevation/profile processing made non-destructive.** Raw / Filtered / Display / Grade profiles are separate; anomaly
+  detection emits metadata only; smoothing attenuation is derived and becomes a measured TA-001A deliverable; a short-steep event
+  rule is pre-declared so short real features are not silently dropped (§12).
+- **C3 — G-DATA event detection formally defined**: same detector for reference and runtime, one-to-one IoU matching, precision
+  and recall ≥ 0.90, ≥ 50 eligible reference events (else INCONCLUSIVE), BORDERLINE band, NO_EVENT_CASE; G-DATA split into
+  G-DATA-1…4 (§22.3).
+- Battery measurement protocol clarified (charge counter, ≥ 3 + 3 trials, §21.5); n = 5 glance test declared exploratory (§3.5, §22.6).
+
 ---
 
 ## 1. Executive decision
@@ -35,17 +52,20 @@ Local symbols this design depends on were re-opened in this session and are cite
    **G-3D** (glance test + renderer spike) and becomes V1.1/V2 only if it measurably beats Option C in the one-second glance test.
    Decision remains with the operator (§26 OD-1, OD-2).
 2. **The renderer-independent terrain core is built first and serves A and C**: `TerrainRouteProjection` → `ElevationSampler` →
-   `RouteElevationProfile` → `GradeEvents`, in a new module `:terrain` (depends on `:domain` only).
+   Raw/Filtered/Grade profiles → `GradeEvents`, in a new module `:terrain` (depends on `:domain` only). Route progress uses the
+   NavigationManager-compatible haversine axis `s` with edge-local projection (C1); DEM data is never rewritten by filtering or
+   anomaly detection (C2).
 3. **Elevation**: GUGiK **NMT** (not NMPT), preprocessed offline into **PMTiles v3 / Terrain-RGB (mapbox encoding) lossless PNG,
    Web-Mercator XYZ z15, 256 px** (DERIVED ≈ 2.93 m ground spacing at 52.2° N). A minimal Kotlin PMTiles v3 reader is written
-   against the CC0 spec with Planetiler's Apache-2.0 reader as reference. Format is re-checked at data gate **G-DATA** against a
-   custom-binary alternative.
+   against the CC0 spec with Planetiler's Apache-2.0 reader as reference. Format is re-checked at data gate **G-DATA**
+   (G-DATA-1 DEM, G-DATA-2 grade, G-DATA-3 events, G-DATA-4 feature preservation, §22.3) against a custom-binary alternative.
 4. **No frozen-class exceptions are requested.** Navigation, routing, GPX, session and readiness classes stay untouched.
    Terrain readiness is added beside, not inside, `RidePackEvaluator`.
 5. **Renderer (only if Option A proceeds)**: spike **Filament (direct)** and **MapLibre GL JS in WebView** on an identical scene;
    SceneView, raw OpenGL ES and Vulkan are rejected for the spike (§13). MapLibre Native is **not** a terrain renderer; the
    standalone MapLibre-Native DEM POC is **removed** from the roadmap (§13.1).
-6. **Next task: TA-001A** — projection + synthetic elevation + profile/grade core with unit tests, no real data, no rendering.
+6. **Next task: TA-001A** — projection (Strategy C) + synthetic elevation + raw/filtered/grade profiles + event detector +
+   formal event matcher + smoothing-attenuation measurements, with unit tests; no real data, no rendering.
 
 ---
 
@@ -159,6 +179,7 @@ All cells are INFERRED expectations to be tested with §22.6; none is MEASURED.
 
 ```text
 RECOMMENDATION   V1 = Option C (road-ahead instrument) on top of the shared terrain core.
+                 (G-3D margin below is a PRODUCT GATE TARGET from an exploratory n ≥ 5 test, not statistical proof — §22.6.)
                  Option A remains behind gate G-3D; if it passes, it ships as V1.1 (post-V1), otherwise V2 or dropped.
                  Option B is not pursued for Terrain; a hillshade layer in MAP is a separate optional backlog item.
 WHY              - answers the product questions directly, including in low relief;
@@ -169,6 +190,7 @@ REJECTED         A as V1 (high risk before glance evidence); B (little glance va
 INVALIDATION     G-3D: in the §22.6 glance test on static mock-ups, A answers "climb/flat/descent" and "turn" correctly
                  ≥ 10 percentage points more often than C (TARGET margin) at equal error rate on other questions,
                  AND the TA-002 spike meets the mid-range budget (§21.1).
+                 A smaller difference or conflicting per-question results = INCONCLUSIVE → operator decides (§22.6).
 ```
 
 True 3D status: **moves behind gate G-3D (V1.1 or V2)**; not abandoned.
@@ -190,7 +212,8 @@ target phone in the handlebar mount with §22.6 protocol. Cost: mock images only
 ### 4.1 Terrain Ahead responsibilities
 
 - Derive presentation-only route progress (projection, distance-along, tangent) from `NavigationState` + `Route`.
-- Load offline elevation, sample it, build a smoothed route elevation profile and grade events.
+- Load offline elevation, sample it into an immutable raw route profile, derive filtered/grade/display profiles and grade events
+  without rewriting the raw data (§12).
 - Produce a presentation state (profile window, surface bands, maneuver marker, grade events, confidence) at a bounded rate.
 - Render it (V1: Compose Canvas instrument; later: 3D renderer).
 - Report terrain data readiness separately from navigation readiness.
@@ -206,13 +229,17 @@ session/recording lifecycle, navigation readiness gating, fixing unrelated audit
  NavigationManager.navigationState (StateFlow, ~1 Hz, conflated)        [frozen, :navigation]
           │ collect (view-scoped, Dispatchers.Default)
           ▼
- TerrainRouteProjection  ── per route.id: RouteIndex (metric polyline, cumulative distance, edge grid)   [:terrain]
-          │ ProjectionResult(distanceAlong, edge, fraction, tangent, crossTrack, mode)
+ TerrainRouteProjection  ── per route.id: RouteIndex (haversine axis s — NavigationManager-compatible,
+          │                    coarse lat/lon edge grid, per-edge local-frame constants)            [:terrain]
+          │ ProjectionResult(distanceAlong s, edge, fraction, tangent, crossTrack, mode)
           ▼
- RouteElevationProfile (built once per route.id, lazily extended ahead)  ◄── ElevationSampler ◄── DEM archive (PMTiles)
-          │ profile window [s-50 m, s+600 m] (TARGET)                         [:terrain]
+ RawElevationProfile (immutable, per route.id, windows filled ahead)  ◄── ElevationSampler ◄── DEM archive (PMTiles)
+          │ ──► ProfileAnomalyDetector (metadata only, never rewrites)                            [:terrain]
           ▼
- GradeEventDetector ──► TerrainPresentationState (immutable)               [:terrain]
+ FilteredElevationProfile ──► GradeProfile ──► GradeEventDetector                                [:terrain]
+          │ window [s-50 m, s+600 m] (TARGET)
+          ▼
+ DisplayElevationProfile (presentation-only) + events ──► TerrainPresentationState (immutable)   [:terrain]
           │ StateFlow, ≤ 1 Hz + on route change
           ▼
  Presenter / interpolation (view-scoped, :app)  ──► Canvas instrument @ ≤ 30 fps while animating  (Option C)
@@ -275,12 +302,13 @@ the only place both meet is `:app` (composition root), which already depends on 
 ### 6.1 Input/output contract
 
 ```kotlin
-class TerrainRouteProjection(frameFactory: (GeoPoint) -> LocalFrame) {
+class TerrainRouteProjection(indexBuilder: (Route) -> RouteIndex) {   // RouteIndex = Strategy C (§6.2)
     fun onNavigationState(state: NavigationState, nowNanos: Long): ProjectionResult
 }
 data class ProjectionResult(
     val routeId: String?, val mode: ProjectionMode,          // ATTACHED, DETACHED, HOLD, NO_ROUTE
-    val distanceAlongM: Double?, val edgeIndex: Int?, val edgeFraction: Double?,
+    val distanceAlongM: Double?,                             // navigation-compatible haversine axis s
+    val edgeIndex: Int?, val edgeFraction: Double?,
     val projected: GeoPoint?, val tangentBearingDeg: Double?, val crossTrackM: Double?,
     val confidence: Float                                    // 0..1, presentation only
 )
@@ -290,21 +318,95 @@ Pure Kotlin, no Android types, deterministic for a given input sequence. Never w
 
 ### 6.2 Projection algorithm
 
-Per `route.id` (built once, off main thread):
-1. `RouteIndex`: convert `route.segments[*].points` to metric ENU relative to a route origin (first point) in **double**.
-2. Edges = consecutive point pairs **within** each `RouteSegment`. Calculated routes: segments share their boundary vertex (C6),
-   so edges are continuous; duplicate zero-length boundary edges are skipped. GPX routes: no edge across a `trkseg` boundary.
-3. Cumulative distance `s` per vertex, matching `NavigationManager`'s gap rule (GPX gaps add 0) so `distanceAlong` is comparable
-   with `route.totalDistanceMeters - remainingDistanceMeters` (INFERRED from `NavigationManager.kt:53-60`).
-4. Uniform grid over edges, cell 50 m (TARGET: ≥ typical GPS error, small enough to keep candidate sets short).
+(Corrected in TA-000B-C1 / C1. The original draft put the whole route into one ENU plane anchored at the first point and derived
+`s` from it; that is replaced below.)
 
-Per update:
-1. Convert `currentPosition` to the route frame.
-2. Candidates = edges in cells within radius `R = 60 m` (TARGET; > `OffRouteDetector` 50 m threshold, VERIFIED `OffRouteDetector.kt:10`).
-3. For each candidate: orthogonal projection clamped to the edge → `crossTrack`, `sAlong`.
-4. Score = `crossTrack + λ·max(0, |sAlong − sExpected| − window)` with `sExpected = sPrev + v·Δt`, `window = 30 m + v·Δt·0.5`,
+#### 6.2.1 Three coordinate responsibilities (kept separate)
+
+| Role | Representation | Authority |
+|---|---|---|
+| **Route-wide progress axis** | `s` = cumulative **haversine** distance (`GeoPoint.distanceTo`, R = 6 371 000 m) over `route.allPoints` in order; GPX `trkseg` breaks add 0 | authoritative progress; must equal `NavigationManager`'s axis |
+| **Local matching coordinates** | per-edge local tangent frame (spherical, same R), double | cross-track, edge fraction, tangent — never used to accumulate `s` |
+| **Render-scene coordinates** | local ENU + floating origin (§10.3), float32 on GPU | presentation only |
+
+NavigationManager axis (VERIFIED `NavigationManager.kt:49-60, 197-200`): `activeRoutePointDistances[i]` = Σ haversine over
+`route.allPoints` with `i ∉ gpxBreaks`; `remainingDistanceMeters = last − activeRoutePointDistances[currentPointIndex]`.
+The compatible identity is therefore `s(vertex i) = activeRoutePointDistances[i] = lastCumulative − remainingDistanceMeters`
+(when navigation is snapped to vertex i). `route.totalDistanceMeters` (`RouteMetrics.fromSegments` sum, or `GpxData` track sum —
+VERIFIED `RouteMetrics.kt:64`, `GpxData.kt:17`) is a haversine sum over the same points grouped differently; it agrees with
+`lastCumulative` only up to floating summation-order rounding (INFERRED). `allPoints` of calculated routes contains each shared
+segment-boundary vertex twice (C6); the duplicate contributes 0 m to both axes, and `RouteIndex` keeps vertex indices identical to
+`allPoints` indices so vertex `i` means the same point in both systems.
+
+#### 6.2.2 Distortion of a single route-wide tangent plane (why the old draft was only mildly wrong)
+
+Sphere, tangent plane at the route origin, horizontal (E, N) components. A point at great-circle distance d maps to planar radius
+R·sin(d/R); local radial scale = cos(d/R) ≈ 1 − (d/R)²/2, tangential scale ≈ 1 − (d/R)²/6 (DERIVED):
+
+| Distance from origin | Radial scale error | Position displacement d − R·sin(d/R) | Planar-`s` drift, straight radial route (d³/6R²) | Cross-track error on a 60 m offset |
+|---|---|---|---|---|
+| 10 km | 1.2 × 10⁻⁶ (0.0001 %) | 0.004 m | 0.004 m | < 0.001 m |
+| 50 km | 3.1 × 10⁻⁵ (0.003 %) | 0.51 m | 0.51 m | 0.002 m |
+| 100 km | 1.2 × 10⁻⁴ (0.012 %) | 4.1 m | 4.1 m | 0.007 m |
+| 300 km | 1.1 × 10⁻³ (0.11 %) | 110.9 m | 110.9 m | 0.07 m |
+
+(DERIVED; route *length* ≥ distance from origin, so a 300 km loop stays well inside the 300 km row.)
+Conclusion: a single plane is accurate enough for **matching** at every Mazovia route size; its real defect is **`s` drift** if `s`
+is accumulated from planar edge lengths (metres at 100 km, ~111 m at 300 km) versus the navigation axis. The correction is
+proportional: keep simple planar maths locally, take `s` from haversine.
+
+#### 6.2.3 Strategies evaluated
+
+**Strategy A — route-wide projected CRS.** Scale factor of a transverse Mercator k ≈ k₀·(1 + x²/2R²), x = distance from central
+meridian, 1° longitude ≈ 68.5 km at 52° N (DERIVED). Over 19.0–23.5° E (INFERRED approximate span of Mazovia-area routes):
+UTM 34N (CM 21°, k₀ 0.9996) → k from −0.040 % (CM) to −0.004 % (23.5° E); PL-1992 (CM 19°, k₀ 0.9993) → −0.070 % (19° E) to
++0.047 % (23.5° E) (DERIVED). UTM 34N distorts less over Mazovia; PL-1992's only advantage is matching GUGiK's source CRS, which
+is irrelevant on device (DEM is reprojected offline, §7.4). Both need a transverse-Mercator implementation (Krüger series, compact,
+~100 lines, no library required; or a projection library dependency). Any projected-CRS edge length differs from haversine by the
+scale factor (up to 0.07 % → 70 m per 100 km), so `s` must still come from haversine → the CRS would be used only for matching,
+where Strategy C needs no projection at all.
+
+**Strategy B — segmented local ENU blocks.** Blocks of 2–5 km (hypothesis) each with an ENU anchor; `s` separate. Accurate, but
+needs block-boundary handling (edges straddling blocks, candidates from two blocks in different frames, loops/crossings where two
+distant route parts share a place but live in different blocks), a block lookup layer and extra tests. Error benefit over C: none.
+
+**Strategy C — haversine `s` + coarse lat/lon grid + edge-local projection.**
+1. `s` per vertex exactly as NavigationManager (haversine, GPX gaps 0), same point order and indices.
+2. Coarse grid in lat/lon with cell ≈ 50 m (Δlat = 50/111 195°, Δlon = Δlat/cos φ̄, φ̄ = route mean latitude); each edge inserted
+   into every cell its bounding box touches; grid only proposes candidates — query radius padded by 10 % (TARGET) to absorb the
+   cos φ̄ approximation over the route's latitude span.
+3. Per edge, precomputed constants: start lat/lon, cos(lat₀), planar edge vector (dx, dy) in the edge-local tangent frame at its
+   start, planar length, haversine length `hᵢ`, `sᵢ`.
+4. Per candidate: point → edge-local frame (2 subtractions, 2 multiplications), clamp-projected parameter `t ∈ [0,1]`,
+   cross-track distance, tangent bearing from (dx, dy).
+5. `distanceAlong = sᵢ + t · hᵢ` (edge fraction applied to the navigation-compatible edge length).
+
+Per-edge local-plane error: for edges ≤ 2 km and offsets ≤ 60 m, (ℓ/R)²-order terms are < 10⁻⁷ relative (DERIVED from the table
+above at 1–2 km) — negligible. Memory: ~9 doubles per edge ≈ 72 B → 30 000 edges ≈ 2.2 MB plus grid (DERIVED). Per-fix cost:
+O(k) candidates, no trigonometry at query time.
+
+#### 6.2.4 Decision
+
+```text
+RECOMMENDATION  Strategy C for TA-001A.
+WHY             exact agreement with the NavigationManager progress axis by construction (same formula, same indices);
+                no route-wide plane, no block state machine, no projection library; loops/crossings are just more
+                candidates; deterministic; bounded per-fix work.
+DERIVED ERROR   s: identical to navigation axis (only floating rounding, §6.6 tolerance); matching: < 1 mm-level
+                planar error per edge; single-plane alternative would have drifted 4.1 m (100 km) / 111 m (300 km) in s.
+REJECTED        A (needs TM implementation for no matching benefit; its edge lengths differ from haversine by up to 0.07 %);
+                B (boundary complexity, no accuracy gain); original single-plane draft (s drift).
+INVALIDATION    NavigationManager changes its distance semantics (e.g. ellipsoidal or projected lengths) — then s must follow;
+                edges longer than ~20 km appear (planar edge-local error grows as ℓ²) — then split long edges virtually;
+                measured per-fix cost > 1 ms on mid-range (§6.5).
+```
+
+Per update (unchanged scoring logic, now in edge-local terms):
+1. Candidates = edges from grid cells within radius `R = 60 m` (TARGET; > `OffRouteDetector` 50 m threshold, VERIFIED `OffRouteDetector.kt:10`).
+2. For each candidate: edge-local projection → `crossTrack`, `sAlong = sᵢ + t·hᵢ`.
+3. Score = `crossTrack + λ·max(0, |sAlong − sExpected| − window)` with `sExpected = sPrev + v·Δt`, `window = 30 m + v·Δt·0.5`,
    `λ = 0.5` (all TARGET). The continuity term prevents snapping to parallel or later parts of loops/crossings.
-5. Pick minimum; apply continuity rules (§6.3).
+4. Pick minimum; apply continuity rules (§6.3).
 
 ### 6.3 Continuity and hysteresis
 
@@ -337,16 +439,34 @@ On any conflict (e.g. projection says attached while `status == OFF_ROUTE`) **na
 
 ### 6.5 Complexity
 
-- Build: O(n) points + O(n) grid insertion; memory ≈ n × (2 doubles + 1 double s) + grid (DERIVED: 10 000 points ≈ 240 KB + grid).
-- Update: O(k), k = edges in ≤ 9 cells (typically < 50) — sub-millisecond (INFERRED; measured in TA-001A DoD).
+- Build: O(n) haversine evaluations + O(n) grid insertion; memory ≈ 72 B per edge (§6.2.3) + grid
+  (DERIVED: 10 000 points ≈ 0.7 MB, 30 000 points ≈ 2.2 MB + grid).
+- Update: O(k), k = edges in ≤ 9 cells (typically < 50), no trigonometry per query — sub-millisecond (INFERRED; measured in TA-001A DoD).
 
 ### 6.6 Tests (TA-001A)
 
 straight line; gentle curve; hairpin (two edges 10 m apart, opposite directions); X-crossing; 20 m parallel out-and-back section;
 closed loop (start = end); backward jitter 5 m (HOLD) and 15 m ×1 (rejected) ×2 (accepted); forward jump 200 m ×1 (rejected)
 ×3 (accepted); off-route 80 m for 2 fixes → DETACHED, return at 20 m → re-attach; GPX with 2 `trkseg` and 300 m gap; route
-replacement mid-ride; `distanceAlong` vs `total − remainingDistanceMeters` agreement within 1 edge length on synthetic routes;
-determinism (same input sequence → identical outputs).
+replacement mid-ride; determinism (same input sequence → identical outputs).
+
+Long-route and axis tests (C1):
+- 100 km realistic synthetic route (≈ 10 000 vertices, curves, a loop, a crossing, a 300 m parallel out-and-back) and a 300 km
+  stress route (≈ 30 000 vertices, 3° longitude span).
+- **Axis agreement**: for every vertex i, `|s_index(i) − s_navRef(i)| ≤ 1 mm`, where `s_navRef` is a test-side reference that
+  reproduces `NavigationManager.kt:53-60` verbatim (haversine via `GeoPoint.distanceTo`, same order, GPX breaks = 0).
+  Tolerance justification (DERIVED): identical formula and order give bit-identical sums; the 1 mm budget only absorbs a different
+  but mathematically equivalent summation (≈ 3·10⁴ terms × 2.2·10⁻¹⁶ × 3·10⁵ m ≈ 2·10⁻⁶ m), while any planar or projected `s`
+  would violate it by metres (§6.2.2).
+- Between vertices: `s = sᵢ + t·hᵢ` with `t` from the edge-local projection; for a point placed exactly on an edge at known
+  haversine fraction, `|Δs| ≤ 1 cm` (TARGET) on edges ≤ 2 km.
+- No drift: `s(last vertex)` equals the reference last cumulative within 1 mm on both 100 km and 300 km routes.
+- GPX: 3 `trkseg` with 300 m gaps — gap contributes exactly 0; no candidate edge crosses a gap.
+- Projection correctness at route start, route end, grid-cell boundaries (points exactly on cell edges), loops, crossings and
+  parallel edges (continuity term chooses the expected branch).
+- A later :app-level cross-check (TA-006) compares against a real `NavigationManager` instance: after `updatePosition` at vertex i,
+  `lastCumulative − remainingDistanceMeters == s_index(i)` within 1 mm, where `lastCumulative` is the `remainingDistanceMeters`
+  published immediately after `startNavigation` (VERIFIED `NavigationManager.kt:90`).
 
 ---
 
@@ -616,9 +736,13 @@ Routes/GPS: WGS84 double lat/lon (`GeoPoint`, VERIFIED). DEM: Web Mercator z15 t
 
 ### 10.2 Local metric frame
 
-| Option | Precision | Accuracy ≤ 5 km | Complexity | Verdict |
+Scope after TA-000B-C1: this section covers **render-scene** coordinates only. Route-wide progress (`s`, haversine) and
+local matching (edge-local frames) are defined in §6.2 and are independent of the scene origin; rebasing the scene never changes
+`s`, edge indices or projection results.
+
+| Option (render scene) | Precision | Accuracy ≤ 5 km | Complexity | Verdict |
 |---|---|---|---|---|
-| Local ENU (tangent plane at origin, via ECEF in double) | double on CPU, float offsets on GPU | tangent-plane vertical drop d²/2R: 0.03 m at 600 m, 1.96 m at 5 km (DERIVED, R = 6 371 km) → rebase before 5 km | low (closed-form) | **chosen** |
+| Local ENU (tangent plane at origin on the R = 6 371 km sphere, double) | double on CPU, float offsets on GPU | tangent-plane vertical drop d²/2R: 0.03 m at 600 m, 1.96 m at 5 km (DERIVED, R = 6 371 km) → rebase before 5 km | low (closed-form) | **chosen** |
 | Local equirectangular | double | scale varies with latitude (cos term) — metre-level error over several km (INFERRED) | lowest | rejected for projection maths |
 | Web Mercator | double | scale factor 1/cos(lat) ≈ 1.63 at 52° (DERIVED) must be corrected everywhere | medium | used only for tile addressing |
 | UTM 34N | double | < 1 m | needs projection library | rejected (no benefit over ENU) |
@@ -628,7 +752,9 @@ Routes/GPS: WGS84 double lat/lon (`GeoPoint`, VERIFIED). DEM: Web Mercator z15 t
 
 - Scene origin = first attached projected point of the ride; axes **X = east, Y = north, Z = up**, metres.
 - Rebase when the rider is > 1 000 m (TARGET) from the origin: new origin = current projected point; all chunk transforms updated
-  (Option A); projection's route index stays in its own route frame (double), so projection is unaffected.
+  (Option A); the route index has no global plane at all (Strategy C, §6.2), so projection and `s` are unaffected.
+- Scene ENU uses the same sphere (R = 6 371 000 m) as `GeoPoint.distanceTo`, so scene distances near the origin agree with the
+  haversine axis to the §6.2.2 table precision (≈ 4 mm at 10 km, sub-mm within the 1 km rebase radius, DERIVED).
 - GPU receives float32 positions relative to origin: at ≤ 1.5 km, float32 spacing ≈ 1.2 × 10⁻⁴ m (DERIVED 2⁻²³ × 1024 m) — ample.
 
 ### 10.4 Vertical origin/reference
@@ -654,8 +780,12 @@ sealed interface ElevationSample {
 }
 ```
 
-Implementations: `SyntheticElevationSampler` (TA-001A: plane, slope, sine hills, step, noise with seed) and
-`PmtilesElevationSampler` (TA-001B).
+Implementations: `SyntheticElevationSampler` (TA-001A: plane, slope, sine hills, step, ramps of given grade/length, isolated
+spike, noise with seed) and `PmtilesElevationSampler` (TA-001B).
+
+Non-destructive contract (C2): the sampler returns what the DEM contains (interpolated per §11.2) or `Unavailable`; it never
+smooths, clamps outliers or substitutes plausible values. Its outputs are written once into `RawElevationProfile` (§12.1). No
+renderer, profile filter or blending step writes back into the sampler, its caches or the archive.
 
 ### 11.2 Interpolation
 
@@ -684,45 +814,112 @@ N years (metadata, TARGET N = 10), or KRON86 fallback (should not occur, §7.5).
 
 ## 12. Route elevation profile and grade
 
+(Corrected in TA-000B-C1 / C2. The original draft replaced spikes and short bumps/dips by interpolation by default; that is
+withdrawn. Nothing below rewrites DEM-derived values.)
+
+Profile layers (semantic separation is mandatory; one layer never overwrites another):
+
+| Layer | Content | Mutability | Consumers |
+|---|---|---|---|
+| `RawElevationProfile` | sampler outputs at fixed `s` positions: height or `Unavailable(reason)`, sample confidence, status flags (e.g. neighbour substitution §11.2) | immutable once a window is filled | Filtered, anomaly detector, validation |
+| `ProfileAnomalies` | metadata spans (§12.4) | append-only | confidence, UI hatching, validation |
+| `FilteredElevationProfile` | derived heights + confidence + raw source span per sample + `FilterConfig` id | recomputable, never written back to Raw | Grade, Display |
+| `GradeProfile` | grade per position from **Filtered** only + raw source span + config id | recomputable | GradeEventDetector |
+| `DisplayElevationProfile` | presentation heights (vertical scaling, optional extra visual smoothing) for the instrument/renderer | presentation only | UI/renderer; **never** feeds grade/events |
+
 ### 12.1 Sampling
 
-Resample the route polyline (route frame, double) every **5 m** (TARGET: ≈ 1.7 DEM samples, keeps profile arrays small:
-100 km → 20 000 samples, DERIVED). Profile is computed lazily in windows ahead of the rider (e.g. next 2 km, refilled at 1 km) —
-not the whole route at start — so startup cost is bounded.
+Sample positions every **5 m** along the navigation-compatible axis `s` (§6.2; point at `s` = edge `i` with `t = (s − sᵢ)/hᵢ`,
+interpolated in the edge-local frame) (TARGET: ≈ 1.7 DEM samples at 2.93 m spacing; 100 km → 20 001 samples, DERIVED).
+Windows are filled lazily ahead of the rider (e.g. next 2 km, refilled at 1 km) so startup cost is bounded. `Unavailable` samples
+are stored as such (status + NaN height internally, never 0 m) and are never interpolated across in Raw.
 
-### 12.2 Outlier handling
+### 12.2 Filtering (derived, non-destructive)
 
-Median filter, window 5 samples (25 m, TARGET), then spike rejection: a sample deviating > 2.0 m (TARGET) from the median of its
-50 m neighbourhood is replaced by linear interpolation and flagged (confidence ↓).
+`FilterConfig v1` (TARGETS, frozen for G-DATA before TA-001B runs):
+1. Median over 5 samples (spans 20 m between centres, 25 m effective) — removes isolated single-sample spikes; is the identity on
+   any monotonic run (DERIVED property of the median), so ramps and plateau-to-plateau climbs pass unchanged.
+2. Moving average over 5 samples (25 m effective width).
+3. A filtered sample whose source window contains any `Unavailable` raw sample is itself `Unavailable` (no bridging of gaps;
+   gaps widen by ≤ 4 samples = 20 m per side, DERIVED).
+4. Each filtered sample stores its raw source span (median window ∪ average window = raw indices [j − 4, j + 4], DERIVED).
+Maximum smoothing: combined effective support never exceeds 60 m (TARGET). Any other filter is a separate named config and a
+separate experiment, never silently substituted.
 
-### 12.3 Smoothing
+### 12.3 Smoothing attenuation (derived budget, measured in TA-001A)
 
-Moving average / Gaussian, window **25 m** (TARGET, inside the 20–30 m hypothesis). Maximum smoothing: window never exceeds 60 m
-(TARGET) so short real steep transitions are not erased; tuned in TA-001B against DEM ground truth.
+Grade uses `g(s) = (hF(s + 12.5 m) − hF(s − 12.5 m)) / 25 m` (L = 25 m, half-sample positions linearly interpolated in Filtered).
+Moving average (25 m box) followed by the L = 25 m difference is equivalent to convolving the true grade with a triangular kernel
+of 50 m base (DERIVED; the median is ignored because it is the identity on the monotonic test ramps). For an isolated ramp of
+grade g and length ℓ, filtered peak = g · M, where M = kernel mass inside ℓ = 1 − 2·(25 − ℓ/2)²/1250 for ℓ ≤ 50 m, M = 1 for ℓ ≥ 50 m
+(DERIVED). Pre-declared TARGET budget (theory + margin for sampling/interpolation):
 
-### 12.4 Bridges/tunnels/fords
+| Synthetic case | Raw peak | Theory filtered peak | Attenuation budget (TARGET) | Elevation-change budget | Event outcome required |
+|---|---|---|---|---|---|
+| +12 % over 40 m, flat around | 12 % | 11.52 % (−0.48 pp, 4 %) | ≤ 1.0 pp | ≤ 0.1 m (plateau-to-plateau) | retained as CLIMB |
+| +15 % over 25 m | 15 % | 11.25 % (−3.75 pp, 25 %) | ≤ 4.5 pp | ≤ 0.1 m | retained as CLIMB (short rule) |
+| +8 % over 100 m | 8 % | 8.00 % (0) | ≤ 0.5 pp | ≤ 0.1 m | retained as CLIMB |
+| −12 % over 40 m | −12 % | −11.52 % | ≤ 1.0 pp | ≤ 0.1 m | retained as DESCENT |
+| +10 % over 30 m then flat (short real hill) | 10 % | 8.40 % (−1.6 pp) | ≤ 2.0 pp | ≤ 0.1 m | retained as CLIMB (short rule) |
+| isolated false spike (+3 m, one sample) | — | removed by median | filtered max |g| ≤ 1.0 pp | 0 m | no event; raw keeps the spike; anomaly flagged |
+| step discontinuity (2 m over one sample) | — | becomes a ramp (median keeps monotone steps) | report only | report | report only; anomaly flagged |
 
-- `RouteSegment` carries no bridge/tunnel/ford attributes (C7). The **vector PMTiles** transportation layer does carry `bridge`,
-  `tunnel`, `ford` attributes (VERIFIED `tools/tiles/process.lua:43-50`) — a possible later data source (backlog, not V1).
-- V1 heuristic: a dip or bump > 3 m (TARGET) over < 60 m (TARGET) returning to within 1 m of the pre-level → classify as
-  "structure/embankment anomaly": interpolate linearly across for grade, mark the span low-confidence, show as neutral in UI.
-- Fords: real dips; not suppressed unless the anomaly rule triggers.
-- Embankments/cuts: NMT follows ground surface, road may sit on/below it; smoothing + anomaly rule limit false grade; residual
-  error measured in TA-001B.
+Also reported for every case (no silent thresholds): raw/filtered peak grade, absolute (pp) and relative (%) attenuation, raw and
+filtered elevation change, event boundary shift (theory ≤ ~10 m for the ramps above; TARGET ≤ 15 m), event type/class change.
+TA-001A implementation must reproduce the theory column within ±0.3 pp (TARGET) — a larger gap indicates an implementation defect.
+Changing `FilterConfig v1` after TA-001A requires recomputing this table and operator review before TA-001B.
+
+### 12.4 Anomaly detection = metadata only
+
+- `ProfileAnomalyDetector` emits spans `{startS, endS, kind, magnitudeM, detectorParams, confidence}` with kinds
+  `SUSPECTED_PROFILE_ANOMALY` (e.g. dip/bump > 3 m over < 60 m returning to within 1 m of the pre-level, isolated single-sample
+  deviation > 2 m from the local median, step > 1.5 m between adjacent samples — all TARGET detector parameters) and
+  `LOW_CONFIDENCE_SPAN` (substituted/edge-clamped samples, old source year).
+- Detection never modifies Raw, Filtered or Grade values. Effects: span confidence ↓, UI may hatch the span; events overlapping a
+  suspected span carry `confidence` ↓ but are **not suppressed**.
+- Shape alone never yields `BRIDGE`, `TUNNEL`, `EMBANKMENT` or `FORD` labels. `RouteSegment` carries no such attributes (C7);
+  the vector PMTiles transportation layer carries `bridge`, `tunnel`, `ford` (VERIFIED `tools/tiles/process.lua:43-50`) — a
+  possible future confirming source (backlog), only then may structure labels be used.
+- Fords, drainage dips, cuts and embankments are real terrain for the rider and remain visible unless G-DATA proves a specific
+  correction helps (§12.7).
 
 ### 12.5 Grade events
 
-- `grade(s) = (h(s + L/2) − h(s − L/2)) / L`, L = 25 m (TARGET), on the smoothed profile. Never from adjacent DEM pixels.
-- Event = contiguous span with |grade| ≥ **4 %** (TARGET) for ≥ **50 m** (TARGET); ends when |grade| < **2.5 %** (hysteresis, TARGET).
-- Outputs: `currentGrade`, `nextClimb/nextDescent {startDistance, length, avgGrade, maxGrade, elevationChange}`, `confidence`.
-- Missing DEM in window → events not emitted for that span; `confidence = 0`; UI shows "no data", not "flat".
-- TA-001B produces the distribution (histograms of |Δh| over 300/600 m and of grade) for ≥ 5 real routes (TARGET) — resolves U2 and
-  calibrates thresholds for low relief.
+- Grade from `GradeProfile` (Filtered heights, §12.3). Never from adjacent DEM pixels, never from Display heights, never from
+  renderer mesh heights.
+- Candidate span: contiguous run with |g| ≥ **4 %** that ends when |g| < **2.5 %** (hysteresis) (TARGETS).
+- The span is an **event** if either (TARGETS, pre-declared in C1):
+  - **standard**: span length ≥ **50 m**, or
+  - **short-steep**: the span contains a sub-run with |g| ≥ **7 %** of length ≥ **10 m**.
+  (The short-steep rule is DERIVED from §12.3: +10 %/30 m filters to a ≥ 7 % sub-run ≈ 16 m wide and a 4 % span ≈ 35 m long,
+  which the standard rule alone would drop; a 2 m step yields a ≥ 7 % run of only ≈ 6 m and is not an event.)
+- Event model: `type ∈ {CLIMB, DESCENT}`, `class ∈ {STANDARD, SHORT}` (SHORT if length < 50 m), `startDistanceM`, `endDistanceM`,
+  `lengthM`, `averageGrade`, `maxGrade` (signed, max |g|), `elevationChangeM` (Filtered end − start), `confidence`,
+  `rawSpan`, `configId`.
+- Outputs to presentation: `currentGrade`, next CLIMB / next DESCENT events.
+- Missing data: a span containing `Unavailable` grade samples is split; the unavailable part emits no event and shows "no data",
+  never "flat".
+- TA-001B reports distributions (|Δh| over 300/600 m, grade histograms) for the validation routes (resolves U2). These inform the
+  **product** UX thresholds in TA-007; they do **not** retune the G-DATA detector (§22.3). Any detector change after G-DATA is a
+  new declared experiment and requires re-running G-DATA.
 
 ### 12.6 Confidence
 
-Profile span confidence = min of sample confidences in the grade window × anomaly flag factor. Separate from surface confidence
-(`RoadDataConfidence`, VERIFIED `RouteSegment.kt:17`).
+Profile span confidence = min of raw sample confidences in the grade window's raw source span × anomaly factor (0.5 inside a
+suspected span, TARGET). Separate from surface confidence (`RoadDataConfidence`, VERIFIED `RouteSegment.kt:17`).
+
+### 12.7 Correction heuristics are candidates, not defaults
+
+TA-001B compares on real data RAW, FILTERED (`FilterConfig v1`), ANOMALY-FLAGGED and an OPTIONALLY-CORRECTED candidate (e.g.
+interpolating across suspected spans) against the 1 m reference. A destructive correction becomes production behaviour only if
+it improves G-DATA-2/3 **and** does not reduce G-DATA-4 feature retention (§22.3). Otherwise: detect + flag + do not rewrite.
+
+### 12.8 Traceability memory cost (DERIVED)
+
+Per sample: Raw = s, lat, lon, height (4 × 8 B) + status (1 B) + confidence (4 B) = 37 B; Filtered = height (8) + confidence (4)
++ raw span (2 × 4) = 20 B; Grade = 20 B (same layout); Display (full route, Float) = 4 B → ≈ 81 B/sample.
+100 km at 5 m = 20 001 samples ≈ **1.6 MB**; 300 km ≈ **4.9 MB**; anomaly spans and events (hundreds × ~64 B) < 50 KB.
+With lazy 2 km windows the live footprint is ≈ 32 KB. Traceability is kept; saving this memory is not a reason to drop layers.
 
 ---
 
@@ -838,7 +1035,7 @@ Not needed in V1: 12 × 8 192 ≈ 98 k triangles (DERIVED) is modest (INFERRED).
 
 ### 14.4 Road ribbon
 
-Centerline = `RouteSegment.points` (VERIFIED). Height = smoothed route profile (§12), **not** raw DEM. Width by functional class from
+Centerline = `RouteSegment.points` (VERIFIED). Height = `DisplayElevationProfile` (§12), **not** raw DEM samples. Width by functional class from
 `highway` (TARGET semantic widths: track/path 3 m, service/unclassified 4 m, tertiary+ 6 m — visual only). Colour/pattern by
 `surface` band only (no `smoothness`, `osmWayId`, `name`, `access` — C7). Ribbon lifted 0.15 m (TARGET) to avoid z-fighting.
 
@@ -846,8 +1043,10 @@ Centerline = `RouteSegment.points` (VERIFIED). Height = smoothed route profile (
 
 Recommended, visualisation-only: within 6 m (TARGET) of the centerline set terrain vertex height to road height; blend smoothly to
 unmodified terrain at 20 m (TARGET), max adjustment 3 m (TARGET); beyond that, leave the conflict visible and mark low confidence.
-Bridges/tunnels (anomaly spans §12.4): no blending, ribbon drawn at interpolated height. This falsifies terrain locally by design;
-blended heights live only in mesh buffers and **never feed** profile, grade or sampler.
+Suspected profile anomaly spans (§12.4 — not asserted to be bridges/tunnels): no blending; ribbon follows the Display profile.
+This falsifies terrain locally by design. Grade safety rule (C2): blended heights live only in GPU/CPU mesh buffers and **never
+feed** `ElevationSampler`, `RawElevationProfile`, `FilteredElevationProfile`, `GradeProfile` or `GradeEventDetector`; the ribbon
+height itself comes from `DisplayElevationProfile`, which is also presentation-only.
 
 ### 14.6 Active route
 
@@ -866,13 +1065,15 @@ pitch ~35° (TARGETS, tuned in spike). Option C: the strip's "camera" is the win
 
 ### 15.2 Position interpolation
 
+All camera progress values are on the navigation-compatible axis `s` (§6.2); a pose at `s` is resolved to edge `i`, `t = (s − sᵢ)/hᵢ`,
+position interpolated in the edge-local frame, then converted to render-scene ENU (§10) — scene rebasing never changes `s`.
 `sDisplay(t)` moves toward `sTarget` with bounded speed: `sDisplay += clamp(sTarget + v·(t − tFix) − sDisplay, −1 m, v·dt·1.3)`
 (TARGET constants): conservative prediction up to 1.0 s past the last fix, never beyond `sTarget + 15 m` (TARGET). Interpolation
 runs in the view (render thread for A, animation clock for C), not in `:terrain`.
 
 ### 15.3 Heading
 
-ATTACHED: route tangent at `sDisplay` smoothed over 30 m of route (TARGET). DETACHED: `NavigationState.currentBearing` (held at low
+ATTACHED: route tangent at `sDisplay` (edge-local vector (dx, dy), §6.2.3) smoothed over 30 m of route (TARGET). DETACHED: `NavigationState.currentBearing` (held at low
 speed by navigation, C2) with 0.5 s exponential smoothing (TARGET).
 
 ### 15.4 Low speed
@@ -1125,9 +1326,21 @@ Device class (TARGET): current-generation flagship SoC, 8+ GB RAM. Option A: 60 
 ### 21.5 Measurement plan
 
 `adb shell dumpsys gfxinfo <pkg> framestats` (frame times), `dumpsys meminfo` (RAM), Android Studio profiler / Perfetto traces
-(decode, mesh, upload spans with `Trace.beginSection`), `dumpsys batterystats` + fixed screen brightness 30-min scripted replay
-(simulator §22.2) for MAP vs TERRAIN, `dumpsys thermalservice` sampling every 10 s. Each task that owns a metric records results in its
-result document; values then become MEASURED.
+(decode, mesh, upload spans with `Trace.beginSection`), `dumpsys thermalservice` sampling every 10 s. Each task that owns a metric
+records results in its result document; values then become MEASURED.
+
+Battery protocol (TA-009; clarification in TA-000B-C1, §21.4 TARGETS unchanged):
+- Primary signal: `BatteryManager.getLongProperty(BATTERY_PROPERTY_CHARGE_COUNTER)` (µAh) sampled at start/end and every 60 s,
+  plus `dumpsys batterystats` / power telemetry where the device exposes it. UI battery % is too coarse (1 % steps) for a
+  +3 % / 30 min budget and is recorded only as a sanity check.
+- Controlled conditions: same physical device and battery health, same brightness, orientation and airplane mode, same scripted
+  30-min route replay (simulator §22.2), same app state, start only when battery temperature is within the same ±2 °C band
+  (TARGET) and charge within the same 60–90 % window (TARGET), device unplugged.
+- Trials: ≥ 3 MAP and ≥ 3 TERRAIN runs, interleaved (MAP, TERRAIN, MAP, …).
+- Report: µAh consumed per run, normalised µAh/h (and mWh/h if voltage is available), mean and range/standard deviation per mode,
+  and the TERRAIN − MAP delta relative to MAP mean. A delta within the MAP run-to-run spread is reported as "not distinguishable".
+- Fallback if the charge counter is absent or quantised on the reference device: longer runs (≥ 60 min) with battery % and
+  `batterystats` estimated power, documented as lower-confidence; or a second reference device with a working counter.
 
 ---
 
@@ -1141,8 +1354,15 @@ result document; values then become MEASURED.
 - PMTiles reader: header parsing, root + leaf directory lookup, run-length entries, gzip internal compression, tile-not-found,
   truncated file → error, against archives from the reference writer.
 - Terrain-RGB decode: encode/decode round trip for −100…2 000 m in 0.1 m steps.
-- Grade: flat (no events), constant +10 % / −10 %, 5 m spike (rejected), 400 m climb (one event), long descent, missing-sample span
-  (no event, confidence 0).
+- Profiles (C2): Raw is byte-identical before and after filtering/anomaly detection (immutability test); Filtered/Grade samples carry
+  the correct raw source span and `configId`; `Unavailable` never becomes 0 m and is never bridged; determinism of `FilterConfig v1`.
+- Smoothing attenuation: every row of the §12.3 table, reporting all listed quantities; theory reproduced within ±0.3 pp; required
+  event outcomes met.
+- Grade/events: flat (no events), constant +10 % / −10 % (one event each), isolated spike (no event; raw keeps it; anomaly flagged),
+  400 m climb (one STANDARD event), long descent, short-steep cases (SHORT events), missing-sample span (split, no event, "no data").
+- Event matcher (C3, §22.4): identical lists → precision = recall = 1; one runtime event overlapping two references → at most one TP;
+  IoU/start-error boundary cases (IoU exactly 0.60, start error exactly 25 m → match; 0.59 / 25.1 m → no match); tie-break by
+  start error; BORDERLINE classification examples; NO_EVENT_CASE; unscorable (Unavailable) spans excluded and counted.
 
 ### 22.2 Deterministic simulation
 
@@ -1150,16 +1370,77 @@ A debug-only `NavigationStateReplayer` in `:app` debug sources feeds a scripted 
 speed, `status`, route replacement, gaps) into the terrain presenter only — it never calls `NavigationManager` (frozen). Scripts:
 straight, curve, junction, hill, descent, mixed surfaces, GPX gap, GPS loss, missing DEM tile. No motorcycle needed.
 
-### 22.3 DEM validation (G-DATA part 1)
+### 22.3 G-DATA definitions and DEM validation (G-DATA-1)
 
-Runtime sampler vs source 1 m NMT (reprojected) at 10 000 random points in the test area (TARGET): median |error| ≤ 0.3 m,
-p95 ≤ 1.0 m (TARGETS reflecting 2.9 m resampling + 0.1 m quantisation). z14 variant reported for comparison.
+G-DATA (after TA-001B) = G-DATA-1 AND G-DATA-2 AND G-DATA-3 (PASS / FAIL / INCONCLUSIVE) plus G-DATA-4 (PASS / REVIEW).
+All metric definitions, thresholds, `FilterConfig v1` and detector parameters below are **frozen before TA-001B** (TA-000B-C1);
+changing any of them afterwards is a new declared experiment that re-runs the whole gate.
 
-### 22.4 Grade validation (G-DATA part 2)
+Common definitions:
+- **Reference DEM**: the GUGiK NMT 1 m EVRF2007 sheets used as pipeline input, sampled bilinearly in their native CRS at the query
+  location (query lat/lon transformed to the sheet CRS offline with the pipeline's recorded PROJ/GDAL version).
+- **Runtime DEM**: `PmtilesElevationSampler` on the built archive (z15 Terrain-RGB) at the same lat/lon.
+- **Validation routes**: ≥ 5 real routes (TARGET), fixed and listed before the run, plus optional hillier corridors added only by
+  operator decision (§22.4 G-DATA-3).
+- **Profiles**: both sides sampled at identical `s` positions (5 m, §12.1) along the same route, same `FilterConfig v1`, same grade
+  window, same `GradeEventDetector` and thresholds. Positions where either side is `Unavailable` are UNSCORABLE, excluded and counted.
 
-For ≥ 5 real routes: profile from runtime archive vs profile from 1 m source with identical smoothing: grade difference p95 ≤ 1.5 %
-points; event agreement ≥ 90 % (TARGETS). Only if unresolved: TA-001C sensor comparison (barometer relative height, IMU pitch after
-mount calibration) with GPS altitude used only as a weak cross-check.
+**G-DATA-1 — DEM accuracy.**
+
+- Population: 10 000 points (TARGET) uniformly random within the archive coverage, excluding nodata on either side; additionally
+  reported stratified by land cover (forest vs open) and by source sheet year.
+- Conditions: archive built exactly per §7.7 (EPSG:3857, z15, bilinear/average resampling as recorded in `build_manifest.json`).
+- Metric: |runtime − reference| in metres.
+- PASS: median ≤ 0.3 m AND p95 ≤ 1.0 m (TARGETS: 2.9 m resampling of smooth low-relief ground + ±0.05 m Terrain-RGB quantisation).
+  z14 variant reported for comparison only.
+
+### 22.4 Grade, event and feature validation — G-DATA-2 / 3 / 4
+
+**G-DATA-2 — grade accuracy.** At every scorable 5 m position of every validation route: |g_runtime − g_reference| in percentage
+points, both computed from Filtered profiles with `FilterConfig v1` and L = 25 m. PASS: p95 ≤ 1.5 pp (TARGET), reported per route
+and pooled.
+
+**G-DATA-3 — event detection** (reference = detector on reference-DEM Filtered profile; runtime = same detector on runtime-DEM
+Filtered profile; event model §12.5).
+- *Match*: runtime X matches reference R iff same `type` AND IoU(X, R) = overlap / union of the [start, end] intervals ≥ **0.60**
+  AND |X.start − R.start| ≤ **25 m** (TARGETS). Strictness is accepted deliberately: a 50 m event shifted 20 m has IoU = 30/70 ≈ 0.43
+  and does not match; the §12.3 theory predicts boundary shifts ≤ ~10 m between two equally filtered profiles, so larger shifts
+  indicate real data loss.
+- *One-to-one assignment*: sort all admissible (X, R) pairs by IoU descending, then |start error| ascending, then R.start ascending
+  (deterministic); greedily accept a pair if neither X nor R is already assigned.
+- *BORDERLINE (gate scoring only; production detector unchanged)*: a reference event R is **eligible** iff it is robust under
+  either rule: (standard-robust) length ≥ 60 m AND max|g| ≥ 4.5 %, or (short-robust) it contains a sub-run with |g| ≥ 7.5 % of
+  length ≥ 12 m (thresholds + 0.5 pp; minimum lengths × 1.2 — TARGETS). Non-eligible reference events are BORDERLINE.
+  Pairs involving a BORDERLINE R are excluded from TP and reported as BORDERLINE_MATCHED.
+  An unassigned runtime event X is BORDERLINE (not FP) iff the reference Filtered max|g| over X's interval is ≥ 3.5 % and no
+  eligible reference event overlaps X; otherwise it is FP. An unassigned eligible R is FN.
+- *Counts*: TP = accepted pairs with eligible R; FN = unassigned eligible R; FP = unassigned runtime events not BORDERLINE;
+  precision = TP / (TP + FP); recall = TP / (TP + FN); F1 = 2PR / (P + R) reported as secondary only.
+- *PASS*: pooled (micro) precision ≥ **0.90** AND recall ≥ **0.90**, with ≥ **50** eligible reference events over the dataset.
+  Fewer than 50 eligible reference events (including after BORDERLINE exclusion) → **INCONCLUSIVE** (not PASS, not FAIL); the
+  operator then chooses: add routes, add hillier validation corridors, reduce reliance on the event gate, or review thresholds as a
+  new declared experiment. The minimum is not lowered after results are known.
+- *NO_EVENT_CASE*: a route with zero eligible reference events and zero non-BORDERLINE runtime events is reported as
+  NO_EVENT_CASE and contributes nothing to precision/recall. A route with zero eligible reference events but runtime FPs counts
+  those FPs; its recall is N/A.
+- *Per route*: eligible reference events, runtime events, TP, FP, FN, precision, recall, BORDERLINE counts, UNSCORABLE length,
+  NO_EVENT_CASE. Any route with precision < 0.70 or recall < 0.70 (TARGETS) is flagged ROUTE_REQUIRES_INVESTIGATION; this alone
+  does not fail G-DATA when the pooled gate passes, but its cause must be explained before proceeding.
+- *Magnitude diagnostics per matched pair*: start error (m), end error (m), length error (m and %), average-grade error (pp),
+  max-grade error (pp), elevation-change error (m), IoU — reported as distributions (median, p95), no separate PASS thresholds in V1.
+
+**G-DATA-4 — terrain-feature preservation** (guards against "both sides equally over-smoothed").
+- Feature reference: the same detector run on the reference 1 m DEM **Raw** profile at 5 m positions with only the L = 25 m grade
+  window (no median, no moving average).
+- Measured against the runtime **product** pipeline (runtime DEM + `FilterConfig v1`), same matching rule as G-DATA-3.
+- Reported: feature recall, per matched feature peak-grade attenuation (pp and %), elevation-change attenuation (m), boundary shift,
+  retained/lost, split by class (SHORT / STANDARD); plus the §12.3 synthetic table re-run on the final code.
+- PASS: feature recall ≥ 0.80 AND median peak-grade attenuation ≤ 2.0 pp AND no SHORT-class feature with raw max|g| ≥ 12 % lost
+  (TARGETS). Otherwise **REVIEW**: the operator decides whether to change `FilterConfig` (new declared experiment, full re-run) or
+  accept the loss explicitly. G-DATA cannot be declared passed while G-DATA-4 is in REVIEW without that operator decision.
+
+Only if G-DATA leaves unexplained doubt: TA-001C sensor comparison (barometer relative height, IMU pitch after mount calibration)
+with GPS altitude used only as a weak cross-check (ellipsoidal datum, §7.5).
 
 ### 22.5 Renderer validation
 
@@ -1173,6 +1454,10 @@ test scene, no gaps at chunk seams, active route visible in all states.
 3. Ask: turn direction (L/R/straight)? climb/flat/descent? junction yes/no? surface change yes/no?
 4. ≥ 5 riders (TARGET), record per-question correctness and response time.
 5. Pass: ≥ 80 % correct per question (TARGET); candidate comparison per §3.5.
+6. Interpretation (TA-000B-C1): n = 5 is an **exploratory** usability test. The 10 pp A-vs-C margin in G-3D is a product gate
+   TARGET, not statistical proof, and no statistical significance is claimed. If A and C differ by less than the margin, or results
+   conflict across questions, the result is **INCONCLUSIVE**; the operator may test more riders, inspect route-type subgroups,
+   keep C for V1 and defer A, or take a product decision.
 
 ### 22.7 Sunlight test
 
@@ -1190,15 +1475,21 @@ Branch by V1 decision: **C-path** (recommended) and **A-path** (after G-3D). Tas
 **TA-001A — Terrain core on synthetic data**
 - GOAL: prove projection, sampling interface, profile and grade logic without files or rendering.
 - WHY: isolate geometry/algorithm bugs from format and Android issues.
-- INPUTS: `Route`, `NavigationState` (read-only), DESIGN §6, §11, §12.
-- OUTPUTS: `:terrain` module with `LocalFrame`, `RouteIndex`, `TerrainRouteProjection`, `ElevationSampler` + `SyntheticElevationSampler`,
-  `RouteElevationProfiler`, `GradeEventDetector`, `TerrainPresentationState`.
+- INPUTS: `Route`, `NavigationState` (read-only), DESIGN §6, §11, §12, §22.4 (metric definitions).
+- OUTPUTS: `:terrain` module with `LocalFrame` (render-scene ENU helper), `RouteIndex` (Strategy C: haversine `s`, lat/lon grid,
+  edge-local constants), `TerrainRouteProjection`, `ElevationSampler` + `SyntheticElevationSampler`, `RawElevationProfile`,
+  `FilteredElevationProfile` (`FilterConfig v1`), `GradeProfile`, `DisplayElevationProfile`, `ProfileAnomalyDetector`
+  (metadata only), `GradeEventDetector` (standard + short-steep rules), `EventMatcher` (G-DATA-3/4 metric implementation, reused
+  unchanged by TA-001B), `TerrainPresentationState`.
 - FILE AREA: `terrain/**` (new), `settings.gradle.kts` (+ `include(":terrain")`).
 - FROZEN: `navigation/**`, `routing/**`, `domain/**` sources, `data/**`, `app/**`.
-- SCOPE: pure Kotlin + coroutines; no Android framework calls.
-- TESTS: §6.6, §22.1 grade + sampler (synthetic).
-- MEASUREMENTS: projection update time on JVM for 10 000-point route (report).
-- DoD: all tests pass; no change outside allowed files; determinism test green.
+- SCOPE: pure Kotlin + coroutines; no Android framework calls. Excluded: GUGiK downloads, PMTiles reader, `BitmapFactory`,
+  Android UI/Compose, Filament, WebView, sensor logging, real DEM archives.
+- TESTS: §6.6 (incl. 100 km / 300 km axis tests, 1 mm tolerance), §22.1 profiles, attenuation table, grade/events, event matcher.
+- MEASUREMENTS: projection update time on JVM for 10 000- and 30 000-point routes; §12.3 attenuation table (all columns) — reviewed
+  by the operator before TA-001B starts.
+- DoD: all tests pass; attenuation theory reproduced within ±0.3 pp and required event outcomes met; Raw immutability test green;
+  no change outside allowed files; determinism test green.
 - STOP: any need to change a frozen class → stop, raise OPEN DECISION.
 - GATE: review.
 
@@ -1207,13 +1498,17 @@ Branch by V1 decision: **C-path** (recommended) and **A-path** (after G-3D). Tas
 - WHY: prove data correctness before any UI/renderer.
 - INPUTS: GUGiK NMT EVRF2007 sheets for ≥ 5 routes; DESIGN §7–§11.
 - OUTPUTS: `tools/terrain/` pipeline + `build_manifest.json`; `PmtilesReader`, `TerrainRgbDecoder`, `DemTileCache`,
-  `PmtilesElevationSampler`; test archives (not committed); report with U2–U6 answers.
+  `PmtilesElevationSampler`; validation harness (JVM, reuses TA-001A `EventMatcher` and `FilterConfig v1` unchanged); test
+  archives (not committed); report with U2–U6 answers.
 - FILE AREA: `tools/terrain/**`, `terrain/**`.
-- FROZEN: as TA-001A; `tools/tiles/**` unchanged.
+- FROZEN: as TA-001A; `tools/tiles/**` unchanged; G-DATA metric definitions and thresholds (§22.3–§22.4) frozen.
 - TESTS: §22.1 reader/decode; §8.4 VALIDATION on device.
-- MEASUREMENTS: archive sizes (corridor 500 m/1 km), decode p95 on a mid-range device, ζ range.
-- DoD: G-DATA passes (§22.3, §22.4), manifest reproducible (second build byte-identical or explained).
-- STOP: G-DATA fails → fix pipeline or re-open format decision (OD-4); do not proceed to UI.
+- MEASUREMENTS: archive sizes (corridor 500 m/1 km), decode p95 on a mid-range device, ζ range; RAW vs FILTERED vs ANOMALY-FLAGGED
+  vs OPTIONALLY-CORRECTED comparison (§12.7); full G-DATA-1…4 per-route and pooled report.
+- DoD: G-DATA-1/2/3 PASS and G-DATA-4 PASS (or operator-accepted REVIEW); manifest reproducible (second build byte-identical or
+  explained).
+- STOP: any G-DATA FAIL → fix pipeline or re-open format decision (OD-4); G-DATA-3 INCONCLUSIVE or G-DATA-4 REVIEW → operator
+  decision (OD-9); do not proceed to UI either way.
 - GATE: **G-DATA**.
 
 **TA-001C — Sensor validation tooling (ONLY IF REQUIRED)**
@@ -1275,14 +1570,19 @@ then mock-up glance G-3D → TA-002 → TA-003/004 as V1.1/V2.
 |---|---|---|---|---|
 | `terrain/build.gradle.kts` | :terrain | Android library, namespace `pl.mazovia.offroad.terrain`, minSdk 26, compileSdk 34 (as other modules) | `project(":domain")`, coroutines-core 1.9.0, junit | 001A |
 | `terrain/src/main/AndroidManifest.xml` | :terrain | empty manifest (matches other library modules) | — | 001A |
-| `terrain/src/main/java/pl/mazovia/offroad/terrain/geo/LocalFrame.kt` | :terrain | WGS84 ↔ ENU (double), rebasing | — | 001A |
-| `.../terrain/projection/RouteIndex.kt` | :terrain | metric edges, cumulative distance, edge grid, GPX gaps | domain `Route` | 001A |
+| `terrain/src/main/java/pl/mazovia/offroad/terrain/geo/LocalFrame.kt` | :terrain | render-scene WGS84 ↔ ENU (sphere R = 6 371 km, double), rebasing — not used for `s` | — | 001A |
+| `.../terrain/projection/RouteIndex.kt` | :terrain | Strategy C: haversine `s` per vertex (NavigationManager-compatible, GPX gaps 0), lat/lon edge grid, per-edge local constants | domain `Route`, `GeoPoint.distanceTo` | 001A |
 | `.../terrain/projection/TerrainRouteProjection.kt` | :terrain | §6 algorithm | `RouteIndex`, domain `NavigationState` | 001A |
 | `.../terrain/projection/ProjectionResult.kt` | :terrain | output model | — | 001A |
 | `.../terrain/elevation/ElevationSampler.kt` | :terrain | interface + `ElevationSample` + metadata | — | 001A |
-| `.../terrain/elevation/SyntheticElevationSampler.kt` | :terrain | deterministic synthetic surfaces for tests and simulator | — | 001A |
-| `.../terrain/profile/RouteElevationProfiler.kt` | :terrain | resample, outliers, smoothing, anomaly spans | sampler, index | 001A |
-| `.../terrain/profile/GradeEventDetector.kt` | :terrain | grade + events + confidence | profiler | 001A |
+| `.../terrain/elevation/SyntheticElevationSampler.kt` | :terrain | deterministic synthetic surfaces (incl. §12.3 cases) for tests and simulator | — | 001A |
+| `.../terrain/profile/RawElevationProfile.kt` | :terrain | immutable sampled heights + status + confidence at `s` positions | sampler, index | 001A |
+| `.../terrain/profile/FilteredElevationProfile.kt` | :terrain | `FilterConfig v1` derived heights with raw source spans | Raw | 001A |
+| `.../terrain/profile/GradeProfile.kt` | :terrain | grade from Filtered, traceable | Filtered | 001A |
+| `.../terrain/profile/DisplayElevationProfile.kt` | :terrain | presentation-only heights | Filtered | 001A |
+| `.../terrain/profile/ProfileAnomalyDetector.kt` | :terrain | metadata-only anomaly spans | Raw | 001A |
+| `.../terrain/profile/GradeEventDetector.kt` | :terrain | standard + short-steep events + confidence | GradeProfile | 001A |
+| `.../terrain/validation/EventMatcher.kt` | :terrain | pre-declared G-DATA-3/4 matching, BORDERLINE, precision/recall (single implementation for tests and TA-001B) | event model | 001A |
 | `.../terrain/presentation/TerrainPresentationState.kt` | :terrain | immutable state for UI/renderer | — | 001A |
 | `terrain/src/test/java/pl/mazovia/offroad/terrain/**` | :terrain | unit tests §22.1 | junit, coroutines-test | 001A/B |
 | `.../terrain/dem/PmtilesReader.kt` | :terrain | minimal read-only PMTiles v3 | JDK (FileChannel, Inflater) | 001B |
@@ -1338,6 +1638,9 @@ archive is ever wanted — not planned); map/routing migration into ride packs (
 | T4 | Filament compileSdk/AAR incompatibility (U7) | M | M | spike; compileSdk bump is a separate decision | 002 |
 | T5 | WebView local random access (U8) | M | M | custom pmtiles Source via bridge | 002 |
 | T6 | StateFlow conflation hides GPS loss vs stationary (C4) | H | L | §15.5 rule treats both as harmless freeze | 005 |
+| T7 | Progress axis drifts from navigation (planar/projected `s`) | L (after C1) | H | Strategy C; 1 mm vertex-agreement tests on 100/300 km routes (§6.6) | 001A |
+| T8 | Filtering attenuates short real climbs/descents | M | H | non-destructive layers; §12.3 derived budget; short-steep rule; G-DATA-4 | 001A/001B |
+| T9 | Short-steep rule creates false events from DEM steps/artefacts | M | M | events kept but confidence ↓ in suspected spans; measured in G-DATA-3 FP | 001B |
 
 ### 25.2 Data
 
@@ -1345,7 +1648,8 @@ archive is ever wanted — not planned); map/routing migration into ride packs (
 |---|---|---|---|---|---|
 | D1 | Mixed KRON86/EVRF2007 sheets | M | M | pipeline rejects mixing; EVRF2007 only | 001B |
 | D2 | Canopy/ALS gaps in forests | M | M | forest vs open comparison; confidence | 001B |
-| D3 | Bridges/embankments produce false grades | H | M | anomaly rule §12.4; later vector bridge data | 001B/007 |
+| D3 | Bridges/embankments produce false grades | H | M | flagged as SUSPECTED_PROFILE_ANOMALY (metadata, confidence ↓, not rewritten, §12.4); correction only if proven by G-DATA (§12.7); later vector bridge data | 001B/007 |
+| D6 | Too few grade events in flat Mazovia for a meaningful event gate | H | M | ≥ 50 eligible events or INCONCLUSIVE; hillier corridors by operator decision (§22.4) | 001B |
 | D4 | Datum confusion in validation | M | M | relative-only validation; ζ grid | 001B/001C |
 | D5 | Low relief makes the feature low-value | M | H | U2 statistics early; Option C scaling | 001B |
 
@@ -1361,7 +1665,7 @@ archive is ever wanted — not planned); map/routing migration into ride packs (
 
 | # | Risk | L | I | Mitigation | Owner |
 |---|---|---|---|---|---|
-| R1 | 3D looks impressive but reads worse | M | H | glance test before spike | G-3D |
+| R1 | 3D looks impressive but reads worse | M | H | glance test before spike; n = 5 exploratory, INCONCLUSIVE → operator (§22.6) | G-3D |
 | R2 | Exaggerated vertical scale misleads | M | M | explicit scale label in C; fixed exaggeration in A | 007 |
 | R3 | Surface bands wrong for GPX (UNKNOWN surfaces) | H | L | show "nieznana", not colours (C7) | 006 |
 
@@ -1403,6 +1707,14 @@ Covered per row above; any risk becoming an issue is recorded in the owning task
 - EVIDENCE: §21 metrics.
 
 **OD-6 Frozen-class exceptions** — none requested.
+
+**OD-9 G-DATA non-PASS outcomes (added in TA-000B-C1)**
+- OPTIONS when G-DATA-3 is INCONCLUSIVE (< 50 eligible events): add routes / add hillier validation corridors / reduce reliance on
+  the event gate for V1 / review detector thresholds as a new declared experiment. When G-DATA-4 is REVIEW: change `FilterConfig`
+  (new experiment, full re-run) / accept the measured feature loss explicitly.
+- RECOMMENDATION: add hillier corridors first (keeps metrics unchanged); never lower the 50-event minimum after seeing results.
+- CONSEQUENCES: more data → delay but stronger gate; reduced reliance → faster, weaker evidence; threshold review → re-run cost.
+- EVIDENCE: TA-001B per-route and pooled report.
 
 **OD-7 Ride Pack / readiness integration**
 - OPTIONS: separate `TerrainReadinessEvaluator` (recommended) / extend `RidePackEvaluator`.
@@ -1466,16 +1778,18 @@ V1 (C-path) is complete when **all** hold (TARGET thresholds, measured per §21.
 |---|---|
 | Offline | airplane mode for a full 30-min scripted ride: no network calls from terrain code (network inspector/log), instrument fully functional |
 | Navigation isolation | no diff in AUDIT §3 frozen files since baseline; existing navigation/routing tests unchanged and passing; fault injection (terrain exceptions) leaves `NavigationState` stream and MAP unaffected |
-| Terrain/profile correctness | G-DATA: DEM median ≤ 0.3 m, p95 ≤ 1.0 m vs source |
-| Grade correctness | grade p95 difference ≤ 1.5 pp vs 1 m source; event agreement ≥ 90 % on ≥ 5 routes |
+| Terrain/profile correctness | G-DATA-1 PASS: DEM median ≤ 0.3 m, p95 ≤ 1.0 m vs 1 m NMT (§22.3) |
+| Grade correctness | G-DATA-2 PASS (p95 ≤ 1.5 pp) and G-DATA-3 PASS: pooled precision ≥ 0.90 AND recall ≥ 0.90 on ≥ 50 eligible reference events, one-to-one IoU ≥ 0.60 / start ≤ 25 m matching, BORDERLINE and NO_EVENT_CASE handled per §22.4 (INCONCLUSIVE ≠ PASS) |
+| Terrain-feature preservation | G-DATA-4 PASS or operator-accepted REVIEW; §12.3 synthetic attenuation table met on the final code; Raw profile never rewritten (immutability test) |
+| Progress axis | Terrain `s` equals the NavigationManager axis within 1 mm at every vertex on 100 km and 300 km test routes and in the :app cross-check (§6.6) |
 | Stable projection | replay suite: no on-screen backward jump > 1 m except scripted reversals; re-attach ≤ 2 fixes after recovery |
 | Visual continuity | 30 fps p95 ≤ 33 ms during animation on mid-range; no dropped state updates |
 | MAP/TERRAIN switching | ≤ 300 ms both ways on mid-range; navigation UI (maneuver, data panel) unchanged across switch |
 | Missing-data fallback | missing/corrupt tiles show "brak danych" spans, never flat 0 m; missing archive → TERRAIN shows reason, MAP normal |
 | Renderer failure fallback | injected instrument/renderer exception → MAP shown within 1 s, TEREN disabled, ride continues |
 | Performance/memory | terrain subsystem ≤ 32 MB; decode p95 ≤ 15 ms off main thread |
-| Battery/thermal | ≤ +3 % vs MAP over 30 min; no thermal warnings attributable to terrain |
-| One-second glance | ≥ 80 % correct per question, ≥ 5 riders |
+| Battery/thermal | ≤ +3 % vs MAP over 30 min measured per the §21.5 protocol (charge counter, ≥ 3 MAP + ≥ 3 TERRAIN interleaved runs, mean and spread reported); no thermal warnings attributable to terrain |
+| One-second glance | ≥ 80 % correct per question, ≥ 5 riders (exploratory product gate, no statistical claim, §22.6) |
 | Sunlight | ≥ 70 % correct overall, no question < 60 % |
 | Storage | 100 km × 500 m corridor terrain pack ≤ 50 MB |
 
