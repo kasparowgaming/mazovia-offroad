@@ -2,6 +2,8 @@ package pl.mazovia.offroad.ui.map
 
 import android.content.res.Configuration
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Layers
@@ -113,6 +115,16 @@ fun MapScreen(
         }
     }
 
+    val focusManager = androidx.compose.ui.platform.LocalFocusManager.current
+    val keyboardController = androidx.compose.ui.platform.LocalSoftwareKeyboardController.current
+
+    LaunchedEffect(uiState.showRoutePanel) {
+        if (uiState.showRoutePanel) {
+            focusManager.clearFocus()
+            keyboardController?.hide()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // Map fills the entire screen
         pl.mazovia.offroad.ui.map.components.MapLibrePMTilesPOCContainer(
@@ -128,200 +140,201 @@ fun MapScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Top: Search bar
-        SearchBar(
-            query = uiState.searchQuery,
-            destinationName = uiState.destinationName,
-            searchResults = uiState.searchResults,
-            isSearching = uiState.isSearching,
-            onQueryChange = { viewModel.updateSearchQuery(it) },
-            onSearch = { viewModel.search() },
-            onClear = { viewModel.clearDestination() },
-            onResultSelected = { result ->
-                viewModel.updateSearchQuery("")
-                viewModel.setDestination(result.location)
-                // Add center requested to focus map on destination
-            },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(16.dp)
-                .fillMaxWidth()
-        )
+        // UI Overlay constrained by a Column
+        Column(modifier = Modifier.fillMaxSize()) {
+            // Top: Search bar
+            SearchBar(
+                query = uiState.searchQuery,
+                destinationName = uiState.destinationName,
+                searchResults = uiState.searchResults,
+                isSearching = uiState.isSearching,
+                onQueryChange = { viewModel.updateSearchQuery(it) },
+                onSearch = { viewModel.search() },
+                onClear = { viewModel.clearDestination() },
+                onResultSelected = { result ->
+                    viewModel.updateSearchQuery("")
+                    viewModel.setDestination(result.location)
+                    focusManager.clearFocus()
+                    keyboardController?.hide()
+                },
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .padding(16.dp)
+                    .fillMaxWidth()
+            )
 
-        // Map controls (one layer button + my location)
-        Column(
-            modifier = Modifier
-                .align(Alignment.CenterEnd)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            FloatingActionButton(
-                onClick = { viewModel.toggleLayers() },
-                modifier = Modifier.size(48.dp),
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                Icon(Icons.Default.Layers, contentDescription = "Warstwy")
-            }
-            FloatingActionButton(
-                onClick = { viewModel.centerOnPosition() },
-                modifier = Modifier.size(48.dp),
-                containerColor = MaterialTheme.colorScheme.surface
-            ) {
-                Icon(Icons.Default.MyLocation, contentDescription = "Moja pozycja")
-            }
-        }
-
-        // Bottom states: Loading → Graph Error → Other Error → Route Panel
-        when {
-            // 1. Loading state — route calculation in progress
-            uiState.isLoading -> {
-                Surface(
+            // Flexible space that pushes bottom panels down and allows shrinking when IME opens
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                // Map controls
+                Column(
                     modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
-                    shadowElevation = 8.dp,
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    color = MaterialTheme.colorScheme.surface
+                        .align(Alignment.BottomEnd)
+                        .padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Row(
-                        modifier = Modifier.padding(24.dp),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
+                    FloatingActionButton(
+                        onClick = { viewModel.toggleLayers() },
+                        modifier = Modifier.size(48.dp),
+                        containerColor = MaterialTheme.colorScheme.surface
                     ) {
-                        CircularProgressIndicator(
-                            modifier = Modifier.size(24.dp),
-                            strokeWidth = 3.dp
-                        )
-                        Spacer(modifier = Modifier.width(16.dp))
-                        Text(
-                            text = "Wyznaczanie trasy\u2026",
-                            style = MaterialTheme.typography.bodyLarge
-                        )
+                        Icon(Icons.Default.Layers, contentDescription = "Warstwy")
+                    }
+                    FloatingActionButton(
+                        onClick = { viewModel.centerOnPosition() },
+                        modifier = Modifier.size(48.dp),
+                        containerColor = MaterialTheme.colorScheme.surface
+                    ) {
+                        Icon(Icons.Default.MyLocation, contentDescription = "Moja pozycja")
                     }
                 }
             }
 
-            // 2. Graph not loaded — persistent actionable state
-            uiState.routingError == RoutingError.GRAPH_NOT_LOADED -> {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
-                    shadowElevation = 8.dp,
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    color = MaterialTheme.colorScheme.errorContainer
-                ) {
-                    Column(
-                        modifier = Modifier.padding(24.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+            // Bottom states: Loading → Graph Error → Other Error → Route Panel
+            when {
+                // 1. Loading state — route calculation in progress
+                uiState.isLoading -> {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shadowElevation = 8.dp,
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        color = MaterialTheme.colorScheme.surface
                     ) {
-                        Text(
-                            text = "Brak danych tras",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Text(
-                            text = "Nie można wyznaczyć trasy. Wczytaj dane offline dla tego obszaru.",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer
-                        )
-                        Button(
-                            onClick = {
-                                viewModel.clearError()
-                                onNavigateToOfflineData()
-                            },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = MaterialTheme.colorScheme.error,
-                                contentColor = MaterialTheme.colorScheme.onError
-                            )
+                        Row(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("Wczytaj dane")
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 3.dp
+                            )
+                            Spacer(modifier = Modifier.width(16.dp))
+                            Text(
+                                text = "Wyznaczanie trasy\u2026",
+                                style = MaterialTheme.typography.bodyLarge
+                            )
                         }
                     }
                 }
-            }
 
-            // 3. Other routing error — dismissible banner
-            uiState.error != null -> {
-                Surface(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth(),
-                    shadowElevation = 8.dp,
-                    shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
-                    color = MaterialTheme.colorScheme.errorContainer
-                ) {
-                    Row(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
+                // 2. Graph not loaded — persistent actionable state
+                uiState.routingError == RoutingError.GRAPH_NOT_LOADED -> {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shadowElevation = 8.dp,
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
                     ) {
-                        Text(
-                            text = uiState.error ?: "",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onErrorContainer,
-                            modifier = Modifier.weight(1f)
-                        )
-                        TextButton(onClick = { viewModel.clearError() }) {
-                            Text("OK")
-                        }
-                        TextButton(onClick = viewModel::retry) {
-                            Text("Ponów")
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = "Brak danych tras",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Text(
+                                text = "Nie można wyznaczyć trasy. Wczytaj dane offline dla tego obszaru.",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer
+                            )
+                            Button(
+                                onClick = {
+                                    viewModel.clearError()
+                                    onNavigateToOfflineData()
+                                },
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = MaterialTheme.colorScheme.error,
+                                    contentColor = MaterialTheme.colorScheme.onError
+                                )
+                            ) {
+                                Text("Wczytaj dane")
+                            }
                         }
                     }
                 }
-            }
 
-            // 4. Route calculated successfully — existing panel
-            uiState.showRoutePanel -> {
-                if (uiState.calculatedRoute?.source == pl.mazovia.offroad.domain.model.RouteSource.IMPORTED_GPX) {
-                    // Simplified view for GPX in MapScreen
-                    Column(
-                        modifier = if (isLandscape) 
-                            Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight().padding(16.dp)
-                        else 
-                            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                // 3. Other routing error — dismissible banner
+                uiState.error != null -> {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shadowElevation = 8.dp,
+                        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+                        color = MaterialTheme.colorScheme.errorContainer
                     ) {
-                        Text("Ślad GPX", style = MaterialTheme.typography.titleMedium)
-                        Text("${uiState.calculatedRoute?.allPoints?.size ?: 0} punktów")
-                        Text("${uiState.calculatedRoute?.waypoints?.size ?: 0} punktów orientacyjnych")
-                        
-                        pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
-                            readiness = readiness,
-                            onPrepareClicked = onNavigateToOfflineData
-                        )
-                        
-                        pl.mazovia.offroad.designsystem.components.ProwadzButton(onClick = handleNavigate)
-                        TextButton(onClick = viewModel::dismissRoutePanel) { Text("Zamknij") }
+                        Row(
+                            modifier = Modifier.padding(20.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = uiState.error ?: "",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { viewModel.clearError() }) {
+                                Text("OK")
+                            }
+                            TextButton(onClick = viewModel::retry) {
+                                Text("Ponów")
+                            }
+                        }
                     }
-                } else Column(
-                    modifier = if (isLandscape)
-                        Modifier.align(Alignment.CenterEnd).width(380.dp).fillMaxHeight()
-                    else
-                        Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                ) {
-                    pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
-                        readiness = readiness,
-                        onPrepareClicked = onNavigateToOfflineData
-                    )
-                    
-                    RouteResultPanel(
-                        metrics = uiState.routeMetrics,
-                        confidence = confidenceUiState,
-                        profile = uiState.selectedProfile,
-                        onProfileSelect = { viewModel.selectProfile(it) },
-                        onNavigate = handleNavigate,
-                        onSave = if (uiState.calculatedRoute?.source == pl.mazovia.offroad.domain.model.RouteSource.CALCULATED_ROUTE) {
-                            { viewModel.saveCalculatedRoute() }
-                        } else null,
-                        isSaved = uiState.isSaved,
-                        onDismiss = { viewModel.dismissRoutePanel() },
-                        modifier = Modifier.fillMaxWidth()
-                    )
+                }
+
+                // 4. Route calculated successfully — existing panel
+                uiState.showRoutePanel -> {
+                    if (uiState.calculatedRoute?.source == pl.mazovia.offroad.domain.model.RouteSource.IMPORTED_GPX) {
+                        // Simplified view for GPX in MapScreen
+                        Column(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .then(if (isLandscape) Modifier.width(380.dp).fillMaxHeight() else Modifier.fillMaxWidth())
+                                .padding(16.dp)
+                                .verticalScroll(rememberScrollState()),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text("Ślad GPX", style = MaterialTheme.typography.titleMedium)
+                            Text("${uiState.calculatedRoute?.allPoints?.size ?: 0} punktów")
+                            Text("${uiState.calculatedRoute?.waypoints?.size ?: 0} punktów orientacyjnych")
+                            
+                            pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
+                                readiness = readiness,
+                                onPrepareClicked = onNavigateToOfflineData
+                            )
+                            
+                            pl.mazovia.offroad.designsystem.components.ProwadzButton(onClick = handleNavigate)
+                            TextButton(onClick = viewModel::dismissRoutePanel) { Text("Zamknij") }
+                        }
+                    } else {
+                        Column(
+                            modifier = Modifier
+                                .weight(1f, fill = false)
+                                .then(if (isLandscape) Modifier.width(380.dp).fillMaxHeight() else Modifier.fillMaxWidth())
+                        ) {
+                            RouteResultPanel(
+                                metrics = uiState.routeMetrics,
+                                confidence = confidenceUiState,
+                                profile = uiState.selectedProfile,
+                                onProfileSelect = { viewModel.selectProfile(it) },
+                                onNavigate = handleNavigate,
+                                onSave = if (uiState.calculatedRoute?.source == pl.mazovia.offroad.domain.model.RouteSource.CALCULATED_ROUTE) {
+                                    { viewModel.saveCalculatedRoute() }
+                                } else null,
+                                isSaved = uiState.isSaved,
+                                onDismiss = { viewModel.dismissRoutePanel() },
+                                readiness = readiness,
+                                onPrepareClicked = onNavigateToOfflineData,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                        }
+                    }
                 }
             }
         }
     }
 }
+

@@ -1,42 +1,79 @@
 package pl.mazovia.offroad.ui.readiness
 
+import androidx.compose.animation.animateContentSize
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.material3.*
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.HelpOutline
 import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Error
-import androidx.compose.material.icons.filled.HelpOutline
-import androidx.compose.runtime.Composable
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import pl.mazovia.offroad.domain.model.RouteSource
 import pl.mazovia.offroad.domain.readiness.ComponentReadiness
 import pl.mazovia.offroad.domain.readiness.RidePackReadiness
-import pl.mazovia.offroad.domain.model.RouteSource
 
 @Composable
 fun RidePackReadinessCard(
     readiness: RidePackReadiness?,
-    onPrepareClicked: () -> Unit
+    onPrepareClicked: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     if (readiness == null) return
 
-    val overallColor = when (readiness.overallStatus) {
+    // Presentation state only: expanded or collapsed
+    // Tied to the route ID so it resets when route changes
+    var isExpanded by rememberSaveable(readiness.route?.id) { mutableStateOf(false) }
+
+    val icon = when (readiness.overallStatus) {
+        ComponentReadiness.READY -> Icons.Default.CheckCircle
+        ComponentReadiness.PARTIAL -> Icons.Default.Warning
+        else -> Icons.Default.Error
+    }
+    
+    val iconColor = when (readiness.overallStatus) {
         ComponentReadiness.READY -> Color(0xFF388E3C)
         ComponentReadiness.PARTIAL -> Color(0xFFF57C00)
         else -> MaterialTheme.colorScheme.error
     }
+    
+    val contentColor = when (readiness.overallStatus) {
+        ComponentReadiness.READY -> MaterialTheme.colorScheme.onSurface
+        ComponentReadiness.PARTIAL -> MaterialTheme.colorScheme.onSurfaceVariant
+        else -> MaterialTheme.colorScheme.onErrorContainer
+    }
+    
+    val statusText = when (readiness.overallStatus) {
+        ComponentReadiness.READY -> "Gotowe do jazdy"
+        ComponentReadiness.PARTIAL -> "Jazda offline możliwa"
+        else -> "Brak danych do wyjazdu"
+    }
+    
+    val subText = when (readiness.overallStatus) {
+        ComponentReadiness.PARTIAL -> "Niektóre funkcje będą ograniczone."
+        else -> null
+    }
 
     Card(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .clickable { isExpanded = !isExpanded },
         colors = CardDefaults.cardColors(
             containerColor = when (readiness.overallStatus) {
-                ComponentReadiness.READY -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
-                ComponentReadiness.PARTIAL -> MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.3f)
-                else -> MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.3f)
+                ComponentReadiness.READY -> MaterialTheme.colorScheme.surfaceVariant
+                ComponentReadiness.PARTIAL -> MaterialTheme.colorScheme.surfaceVariant
+                else -> MaterialTheme.colorScheme.errorContainer
             }
         )
     ) {
@@ -44,122 +81,126 @@ fun RidePackReadinessCard(
             modifier = Modifier.padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Text(
-                text = "Przygotowanie do jazdy",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold
-            )
-
-            // Resources & Capabilities
-            ComponentStatusRow(
-                label = "Mapa",
-                status = readiness.resource.mapResource,
-                readyMessage = "Gotowa",
-                notReadyMessage = "Brak danych offline",
-                partialMessage = "Częściowa",
-                unknownMessage = "Nie można potwierdzić pokrycia"
-            )
-
-            ComponentStatusRow(
-                label = if (readiness.route?.source == RouteSource.IMPORTED_GPX) "Ślad GPX" else "Trasa",
-                status = readiness.resource.routeArtifact,
-                readyMessage = "Gotowa",
-                notReadyMessage = "Brak danych",
-                partialMessage = "Niekompletna"
-            )
-
-            ComponentStatusRow(
-                label = "Prowadzenie offline",
-                status = readiness.capability.followGeometry,
-                readyMessage = "Gotowe",
-                notReadyMessage = "Niedostępne"
-            )
-
-            if (readiness.route?.source != RouteSource.IMPORTED_GPX) {
-                ComponentStatusRow(
-                    label = "Przeliczanie trasy",
-                    status = readiness.capability.fullRerouting,
-                    readyMessage = "Gotowe",
-                    notReadyMessage = "Niedostępne offline",
-                    notRequiredMessage = "Niewymagane"
-                )
-            }
-
-            ComponentStatusRow(
-                label = "Powrót do trasy",
-                status = readiness.capability.recoveryGuidance,
-                readyMessage = "Gotowy",
-                notReadyMessage = "Niedostępny",
-                partialMessage = "Ograniczony"
-            )
-
-            ComponentStatusRow(
-                label = "Dane nawierzchni",
-                status = readiness.resource.persistedData,
-                readyMessage = "Gotowe",
-                notReadyMessage = "Brak danych",
-                notRequiredMessage = "Brak danych"
-            )
-
-            // Device Status checks
-            if (readiness.device.locationPermission == ComponentReadiness.NOT_READY ||
-                readiness.device.gpsAvailable == ComponentReadiness.NOT_READY) {
-                Divider(modifier = Modifier.padding(vertical = 4.dp))
-                if (readiness.device.locationPermission == ComponentReadiness.NOT_READY) {
-                    ComponentStatusRow("Lokalizacja GPS", ComponentReadiness.NOT_READY, "", "Brak uprawnień", "")
-                }
-                if (readiness.device.gpsAvailable == ComponentReadiness.NOT_READY) {
-                    ComponentStatusRow("Sygnał GPS", ComponentReadiness.NOT_READY, "", "Wyłączony", "")
-                }
-            }
-
-            Divider(modifier = Modifier.padding(vertical = 4.dp))
-
-            // Overall Status
+            // Compact Default Row
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Icon(
-                    imageVector = when (readiness.overallStatus) {
-                        ComponentReadiness.READY -> Icons.Default.CheckCircle
-                        ComponentReadiness.PARTIAL -> Icons.Default.Warning
-                        else -> Icons.Default.Error
-                    },
+                    imageVector = icon,
                     contentDescription = null,
-                    tint = overallColor
+                    tint = iconColor,
+                    modifier = Modifier.size(24.dp)
                 )
-                
-                Column {
+                Column(modifier = Modifier.weight(1f)) {
                     Text(
-                        text = when (readiness.overallStatus) {
-                            ComponentReadiness.READY -> "GOTOWE DO JAZDY OFFLINE"
-                            ComponentReadiness.PARTIAL -> "JAZDA OFFLINE MOŻLIWA"
-                            else -> "NIEGOTOWE DO JAZDY OFFLINE"
-                        },
+                        text = statusText,
                         style = MaterialTheme.typography.titleSmall,
                         fontWeight = FontWeight.Bold,
-                        color = overallColor
+                        color = contentColor
                     )
-                    if (readiness.overallStatus == ComponentReadiness.PARTIAL) {
+                    if (subText != null) {
                         Text(
-                            text = "Niektóre funkcje będą ograniczone.",
+                            text = subText,
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                            color = contentColor
                         )
                     }
                 }
+                Icon(
+                    imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                    contentDescription = if (isExpanded) "Zwiń" else "Rozwiń",
+                    tint = contentColor
+                )
             }
 
-            // Provide a button if there's a problem we might be able to fix via OfflineDataScreen
-            if (readiness.resource.offlineGraph == ComponentReadiness.NOT_READY || 
-                readiness.resource.mapResource == ComponentReadiness.NOT_READY) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Button(
-                    onClick = onPrepareClicked,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Dane offline: Uzupełnij")
+            // Expanded State Details
+            if (isExpanded) {
+                HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                
+                Text(
+                    text = "Przygotowanie do jazdy",
+                    style = MaterialTheme.typography.titleMedium,
+                    fontWeight = FontWeight.Bold
+                )
+
+                // Resources & Capabilities
+                ComponentStatusRow(
+                    label = "Mapa",
+                    status = readiness.resource.mapResource,
+                    readyMessage = "Gotowa",
+                    notReadyMessage = "Brak danych offline",
+                    partialMessage = "Częściowa",
+                    unknownMessage = "Pokrycie niepotwierdzone"
+                )
+
+                ComponentStatusRow(
+                    label = if (readiness.route?.source == RouteSource.IMPORTED_GPX) "Ślad GPX" else "Trasa",
+                    status = readiness.resource.routeArtifact,
+                    readyMessage = "Gotowa",
+                    notReadyMessage = "Brak danych",
+                    partialMessage = "Niekompletna"
+                )
+
+                ComponentStatusRow(
+                    label = "Prowadzenie offline",
+                    status = readiness.capability.followGeometry,
+                    readyMessage = "Gotowe",
+                    notReadyMessage = "Niedostępne"
+                )
+
+                if (readiness.route?.source != RouteSource.IMPORTED_GPX) {
+                    ComponentStatusRow(
+                        label = "Przeliczanie trasy",
+                        status = readiness.capability.fullRerouting,
+                        readyMessage = "Gotowe",
+                        notReadyMessage = "Niedostępne offline",
+                        notRequiredMessage = "Niewymagane"
+                    )
+                }
+
+                ComponentStatusRow(
+                    label = "Powrót do trasy",
+                    status = readiness.capability.recoveryGuidance,
+                    readyMessage = "Gotowy",
+                    notReadyMessage = "Niedostępny",
+                    partialMessage = "Ograniczony"
+                )
+
+                ComponentStatusRow(
+                    label = "Dane nawierzchni",
+                    status = readiness.resource.persistedData,
+                    readyMessage = "Gotowe",
+                    notReadyMessage = "Brak danych",
+                    notRequiredMessage = "Brak danych"
+                )
+
+                // Device Status checks
+                if (readiness.device.locationPermission == ComponentReadiness.NOT_READY ||
+                    readiness.device.gpsAvailable == ComponentReadiness.NOT_READY) {
+                    HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
+                    if (readiness.device.locationPermission == ComponentReadiness.NOT_READY) {
+                        ComponentStatusRow("Lokalizacja GPS", ComponentReadiness.NOT_READY, "", "Brak uprawnień", "")
+                    }
+                    if (readiness.device.gpsAvailable == ComponentReadiness.NOT_READY) {
+                        ComponentStatusRow("Sygnał GPS", ComponentReadiness.NOT_READY, "", "Wyłączony", "")
+                    }
+                }
+
+                // Provide a button if there's a problem we might be able to fix via OfflineDataScreen
+                if (readiness.resource.offlineGraph == ComponentReadiness.NOT_READY || 
+                    readiness.resource.mapResource == ComponentReadiness.NOT_READY) {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Button(
+                        onClick = {
+                            // Stop expansion propagation to prevent it from immediately collapsing when clicking
+                            onPrepareClicked()
+                        },
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text("Dane offline: Uzupełnij")
+                    }
                 }
             }
         }
@@ -174,7 +215,7 @@ private fun ComponentStatusRow(
     notReadyMessage: String,
     partialMessage: String = "Ograniczone",
     notRequiredMessage: String = "Nie dotyczy",
-    unknownMessage: String = "Nie można potwierdzić"
+    unknownMessage: String = "Pokrycie niepotwierdzone"
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -193,7 +234,7 @@ private fun ComponentStatusRow(
                     ComponentReadiness.PARTIAL -> Icons.Default.Warning
                     ComponentReadiness.NOT_READY -> Icons.Default.Error
                     ComponentReadiness.NOT_REQUIRED -> Icons.Default.CheckCircle
-                    ComponentReadiness.UNKNOWN -> Icons.Default.HelpOutline
+                    ComponentReadiness.UNKNOWN -> Icons.AutoMirrored.Filled.HelpOutline
                 },
                 contentDescription = null,
                 modifier = Modifier.size(16.dp),

@@ -28,6 +28,8 @@ fun RouteResultPanel(
     onSave: (() -> Unit)? = null,
     isSaved: Boolean = false,
     onDismiss: () -> Unit,
+    readiness: pl.mazovia.offroad.domain.readiness.RidePackReadiness?,
+    onPrepareClicked: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     if (metrics == null) return
@@ -68,8 +70,12 @@ fun RouteResultPanel(
                         )
                     }
                 }
+                confidence?.let { RoadConfidenceSection(it) }
+                pl.mazovia.offroad.ui.readiness.RidePackReadinessCard(
+                    readiness = readiness,
+                    onPrepareClicked = onPrepareClicked
+                )
             }
-            confidence?.let { RoadConfidenceSection(it) }
             Spacer(Modifier.height(8.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (onSave != null) {
