@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "mazovia/codex_contract.schema.json",
+  "title": "Mazovia Codex delegation contract v1",
+  "description": "Strict task contract for .claude/scripts/codex_delegate.py. Mode-dependent rules are enforced by the runner.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "task_id", "mode", "parent_run_id", "subject_run_id", "model", "reasoning_effort",
+               "allowed_paths", "frozen_paths_source", "expected_docs", "required_tests", "timeout_seconds"],
+  "properties": {
+    "schema_version": {"const": 1},
+    "task_id": {"type": "string", "pattern": "^(TA|TASK|DEV-ENV)-[0-9A-Z-]{1,20}$"},
+    "mode": {"type": "string", "enum": ["implement", "review"]},
+    "parent_run_id": {"type": ["string", "null"], "maxLength": 80},
+    "subject_run_id": {"type": ["string", "null"], "maxLength": 80},
+    "model": {"type": "string", "minLength": 1, "maxLength": 80},
+    "reasoning_effort": {"type": "string", "enum": ["low", "medium", "high", "xhigh"]},
+    "allowed_paths": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 300}
+    },
+    "frozen_paths_source": {"const": ".claude/frozen-paths.txt"},
+    "expected_docs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["audit_git_blob", "design_git_blob"],
+      "properties": {
+        "audit_git_blob": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"},
+        "design_git_blob": {"type": ["string", "null"], "pattern": "^[0-9a-f]{40}$"}
+      }
+    },
+    "required_tests": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "argv", "cwd", "timeout_seconds", "env"],
+        "properties": {
+          "id": {"type": "string", "pattern": "^[a-z0-9-]{1,40}$"},
+          "argv": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 32,
+            "items": {"type": "string", "minLength": 1, "maxLength": 200}
+          },
+          "cwd": {"const": "."},
+          "timeout_seconds": {"type": "integer", "minimum": 60, "maximum": 3600},
+          "env": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {"PYTHONHASHSEED": {"const": "0"}}
+          }
+        }
+      }
+    },
+    "timeout_seconds": {"type": "integer", "minimum": 60, "maximum": 7200}
+  }
+}

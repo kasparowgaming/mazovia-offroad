@@ -1,0 +1,44 @@
+{
+  "title": "Mazovia Codex final response v2",
+  "description": "task_status is authoritative for task completion: COMPLETED | BLOCKED | OPEN_DECISION. verdict is the review result (CLEAN | FINDINGS) and is NOT_APPLICABLE for implement runs and for any run whose task_status is not COMPLETED. OPEN_DECISION requires at least one open_decisions record; COMPLETED requires none. The runner enforces these cross-field rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["mode", "task_status", "verdict", "summary", "findings", "open_decisions", "notes"],
+  "properties": {
+    "mode": {"type": "string", "enum": ["implement", "review"]},
+    "task_status": {"type": "string", "enum": ["COMPLETED", "BLOCKED", "OPEN_DECISION"]},
+    "verdict": {"type": "string", "enum": ["NOT_APPLICABLE", "CLEAN", "FINDINGS"]},
+    "summary": {"type": "string"},
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["severity", "path", "line", "summary", "evidence"],
+        "properties": {
+          "severity": {"type": "string", "enum": ["HIGH", "MEDIUM", "LOW"]},
+          "path": {"type": "string"},
+          "line": {"type": ["integer", "null"]},
+          "summary": {"type": "string"},
+          "evidence": {"type": "string"}
+        }
+      }
+    },
+    "open_decisions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "path", "reason", "proposed_change", "alternatives"],
+        "properties": {
+          "kind": {"type": "string", "enum": ["FROZEN CLASS EXCEPTION", "POLICY-PROTECTED PATH", "OTHER"]},
+          "path": {"type": "string"},
+          "reason": {"type": "string"},
+          "proposed_change": {"type": "string"},
+          "alternatives": {"type": "string"}
+        }
+      }
+    },
+    "notes": {"type": "string"}
+  }
+}
