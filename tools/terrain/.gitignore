@@ -1,0 +1,7 @@
+__pycache__/
+.pytest_cache/
+# generated data never lives here (use --work-dir / --output-dir outside the repository)
+*.pmtiles
+*.asc
+*.tif
+*.vrt

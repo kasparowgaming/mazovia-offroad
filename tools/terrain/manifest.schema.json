@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://mazovia-offroad.local/schemas/terrain-build-manifest.json",
+  "title": "Terrain Ahead DEM build manifest (TA-001B)",
+  "description": "Provenance of one Terrain-RGB PMTiles build (build_manifest_z<zoom>.json) or a set of builds (validation/build_manifest.json). 'identity' is the reproducibility identity (hashed into build_id); 'run' holds machine/time specific fields that are not part of identity.",
+  "oneOf": [
+    { "$ref": "#/$defs/build" },
+    {
+      "type": "object",
+      "required": ["schema_version", "primary_zoom", "builds"],
+      "properties": {
+        "schema_version": { "const": "ta001b-build-manifest-set-1" },
+        "primary_zoom": { "type": "integer" },
+        "builds": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/build" } }
+      }
+    }
+  ],
+  "$defs": {
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "input": {
+      "type": "object",
+      "required": ["godlo", "akt_rok", "akt_data", "asortyment", "format", "char_przestrz", "blad_sr_wys", "uklad_xy", "crs",
+                   "uklad_h", "zrodlo_danych", "url_do_pobrania", "sha256", "bytes"],
+      "properties": {
+        "godlo": { "type": "string", "minLength": 1 },
+        "akt_rok": { "type": "string", "pattern": "^[0-9]{4}$" },
+        "akt_data": { "type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$" },
+        "asortyment": { "const": "NMT" },
+        "char_przestrz": { "const": "1.00 m" },
+        "uklad_h": { "const": "PL-EVRF2007-NH" },
+        "crs": { "type": "string", "pattern": "^EPSG:[0-9]+$" },
+        "url_do_pobrania": { "type": "string", "pattern": "^https://opendata\\.geoportal\\.gov\\.pl/" },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "bytes": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "build": {
+      "type": "object",
+      "required": ["build_id", "identity", "output", "run"],
+      "properties": {
+        "build_id": { "type": "string", "pattern": "^ta001b-z[0-9]+-[0-9a-f]{16}$" },
+        "identity": {
+          "type": "object",
+          "required": ["schema_version", "pipeline_version", "pipeline_sha256", "validation_set_sha256", "validation_corridor_ids",
+                       "source", "raster", "encoding", "pmtiles", "tools", "attribution"],
+          "properties": {
+            "schema_version": { "const": "ta001b-build-manifest-1" },
+            "pipeline_version": { "type": "string" },
+            "pipeline_sha256": { "type": "object", "additionalProperties": { "$ref": "#/$defs/sha256" }, "minProperties": 1 },
+            "validation_set_sha256": { "$ref": "#/$defs/sha256" },
+            "validation_corridor_ids": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+            "source": {
+              "type": "object",
+              "required": ["dataset", "vertical_datum", "horizontal_crs_inputs", "years", "inputs", "wfs_index", "selection_rule"],
+              "properties": {
+                "dataset": { "const": "GUGiK NMT" },
+                "vertical_datum": { "const": "PL-EVRF2007-NH" },
+                "horizontal_crs_inputs": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "years": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+                "inputs": { "type": "array", "items": { "$ref": "#/$defs/input" }, "minItems": 1 }
+              }
+            },
+            "raster": {
+              "type": "object",
+              "required": ["grid", "zoom", "tile_size_px", "resampling"],
+              "properties": {
+                "grid": { "const": "EPSG:3857 XYZ" },
+                "zoom": { "type": "integer", "minimum": 0, "maximum": 26 },
+                "tile_size_px": { "const": 256 },
+                "resampling": { "type": "string" }
+              }
+            },
+            "encoding": {
+              "type": "object",
+              "required": ["name", "formula", "quantisation_m", "nodata_code", "nodata_rgb", "valid_height_range_m"],
+              "properties": {
+                "name": { "const": "mapbox" },
+                "nodata_code": { "const": 16777215 },
+                "nodata_rgb": { "const": [255, 255, 255] },
+                "quantisation_m": { "const": 0.1 }
+              }
+            },
+            "pmtiles": {
+              "type": "object",
+              "required": ["version", "tile_type", "tile_compression", "internal_compression", "writer"],
+              "properties": {
+                "version": { "const": 3 },
+                "tile_type": { "const": "png" },
+                "tile_compression": { "const": "none" },
+                "internal_compression": { "const": "gzip" }
+              }
+            },
+            "tools": { "type": "object", "required": ["python", "gdal", "proj", "rasterio", "pyproj", "numpy", "pillow", "zlib", "pmtiles_python_writer"] },
+            "attribution": { "type": "string", "minLength": 1 }
+          }
+        },
+        "output": {
+          "type": "object",
+          "required": ["archive", "sha256", "bytes", "tile_count", "bbox_wgs84", "min_zoom", "max_zoom", "png_payload_bytes", "raw_rgb_bytes"],
+          "properties": {
+            "sha256": { "$ref": "#/$defs/sha256" },
+            "bytes": { "type": "integer", "minimum": 127 },
+            "tile_count": { "type": "integer", "minimum": 1 },
+            "bbox_wgs84": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+          }
+        },
+        "run": {
+          "type": "object",
+          "required": ["build_timestamp", "repository_head", "repository_dirty", "command"],
+          "properties": {
+            "repository_head": { "type": "string" },
+            "command": { "type": "string", "pattern": "PYTHONHASHSEED=0" }
+          }
+        }
+      }
+    }
+  }
+}

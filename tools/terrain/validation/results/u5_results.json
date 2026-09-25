@@ -1,0 +1,10 @@
+{
+ "device": {"model": "Android SDK built for x86_64", "manufacturer": "unknown", "sdk": 34, "release": "14", "abi": "x86_64", "fingerprint": "Android/sdk_phone64_x86_64/emu64x:14/UE1A.230829.036.A1/11228894:userdebug/test-keys", "emulator_hint": true},
+ "u5": [
+  {"archive": "terrain_z15.pmtiles", "tiles": 96, "mismatches": 0, "alpha_not_255_px": 0, "examples": []},
+  {"archive": "terrain_z14.pmtiles", "tiles": 40, "mismatches": 0, "alpha_not_255_px": 0, "examples": []},
+  {"archive": "u5_synthetic.pmtiles", "tiles": 4, "mismatches": 0, "alpha_not_255_px": 0, "examples": []}
+ ],
+ "timing_ms": {"lookup_read": {"n": 960, "p50": 0.0939, "p95": 0.5226, "max": 1.8716}, "bitmapfactory_decode": {"n": 960, "p50": 0.7167, "p95": 1.4061, "max": 3.2832}, "rgb_unpack": {"n": 960, "p50": 0.6114, "p95": 1.3378, "max": 2.1966}, "total": {"n": 960, "p50": 1.4832, "p95": 2.8174, "max": 4.4951}, "note": "debug build, warm page cache, instrumentation process"}
+}
+

@@ -1,0 +1,53 @@
+{
+ "model": "PL-geoid2021 (PL-EVRF2007-NH)",
+ "url": "http://www.gugik.gov.pl/__data/assets/text_file/0008/236546/Model_quasi-geoidy-PL-geoid2021-PL-EVRF2007-NH.txt",
+ "sha256": "d695cf81c7952043bea14b2213730586d01ac538560b2e405f58d76044465ea6",
+ "lattice_deg": 0.01,
+ "mazowieckie_bbox_approx": [
+  51.0,
+  19.25,
+  53.5,
+  23.15
+ ],
+ "nodes": 98141,
+ "zeta_min_m": 27.83,
+ "zeta_max_m": 37.272,
+ "max_gradient_m_per_km": 0.07491345123407657,
+ "transects": {
+  "T1-KAMPINOS": {
+   "zeta_start_m": 31.506,
+   "zeta_end_m": 31.446,
+   "delta_over_transect_m": -0.061
+  },
+  "T2-SZYDLOWIEC": {
+   "zeta_start_m": 35.229,
+   "zeta_end_m": 35.046,
+   "delta_over_transect_m": -0.183
+  },
+  "T3-GORA-KALWARIA": {
+   "zeta_start_m": 31.694,
+   "zeta_end_m": 31.582,
+   "delta_over_transect_m": -0.112
+  },
+  "T4-PLOCK": {
+   "zeta_start_m": 31.054,
+   "zeta_end_m": 31.126,
+   "delta_over_transect_m": 0.072
+  },
+  "T5-BLONIE": {
+   "zeta_start_m": 31.624,
+   "zeta_end_m": 31.563,
+   "delta_over_transect_m": -0.061
+  },
+  "T6-WYSZKOW": {
+   "zeta_start_m": 29.799,
+   "zeta_end_m": 29.857,
+   "delta_over_transect_m": 0.058
+  },
+  "T7-WARSZAWA": {
+   "zeta_start_m": 31.167,
+   "zeta_end_m": 31.035,
+   "delta_over_transect_m": -0.132
+  }
+ }
+}

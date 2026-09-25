@@ -1,0 +1,4 @@
+# Terrain build identity hashes raw source bytes (build.py: pipeline_hashes -> terrain_pipeline/*.py + build_terrain.py;
+# validation_set_sha256 -> validation/validation_routes.json). Keep them LF on every checkout, whatever core.autocrlf says.
+*.py text eol=lf
+validation/validation_routes.json text eol=lf

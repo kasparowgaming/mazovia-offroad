@@ -1,0 +1,71 @@
+{
+    "z15": {
+        "tiles_verified_against_encoder": 96,
+        "environment": "desktop JVM 17.0.20.1 Windows 11 - DEVELOPMENT timing, pure-Kotlin PNG decoder (not BitmapFactory), warm OS file cache",
+        "lookup_read": {
+            "n": 1920,
+            "p50_ms": 0.0112,
+            "p95_ms": 0.0174,
+            "max_ms": 0.2972
+        },
+        "png_decode": {
+            "n": 1920,
+            "p50_ms": 0.8618,
+            "p95_ms": 0.9623,
+            "max_ms": 2.2935
+        },
+        "rgb_unpack": {
+            "n": 1920,
+            "p50_ms": 0.0745,
+            "p95_ms": 0.0816,
+            "max_ms": 1.3402
+        },
+        "total": {
+            "n": 1920,
+            "p50_ms": 0.9484,
+            "p95_ms": 1.0639,
+            "max_ms": 2.4203
+        },
+        "root_directory_bytes": 341,
+        "leaf_directory_bytes": 0,
+        "archive_bytes": 2121778
+    },
+    "z14": {
+        "tiles_verified_against_encoder": 40,
+        "environment": "desktop JVM 17.0.20.1 Windows 11 - DEVELOPMENT timing, pure-Kotlin PNG decoder (not BitmapFactory), warm OS file cache",
+        "lookup_read": {
+            "n": 800,
+            "p50_ms": 0.0095,
+            "p95_ms": 0.0127,
+            "max_ms": 0.0456
+        },
+        "png_decode": {
+            "n": 800,
+            "p50_ms": 0.92,
+            "p95_ms": 1.0073,
+            "max_ms": 1.3983
+        },
+        "rgb_unpack": {
+            "n": 800,
+            "p50_ms": 0.0742,
+            "p95_ms": 0.0807,
+            "max_ms": 1.1527
+        },
+        "total": {
+            "n": 800,
+            "p50_ms": 1.006,
+            "p95_ms": 1.0952,
+            "max_ms": 2.1134
+        },
+        "root_directory_bytes": 186,
+        "leaf_directory_bytes": 0,
+        "archive_bytes": 1031016
+    },
+    "memory": {
+        "decoded_block_payload_bytes": 262144,
+        "decoded_block_retained_bytes_estimate": 262192,
+        "cache_max_bytes": 16777216,
+        "cache_max_blocks": 63,
+        "transient_per_decode_bytes_estimate": "ARGB_8888 bitmap 262144 + getPixels IntArray 262144 + PNG bytes (~22 KB) = ~546 KB per in-flight decode; 2 concurrent decodes -> ~1.1 MB"
+    }
+}

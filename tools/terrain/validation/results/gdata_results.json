@@ -1,0 +1,1527 @@
+{
+    "schema": "ta001b-gdata-results-1",
+    "validation_set_sha256": "649e4e45509fbb1de99e6b52fda4e9111b4c83568f46172b5a43ac8170360e1a",
+    "profile_positions_sha256": "1bdf27d7eae873996c156a007f73eadb630a24f59a51f0d32c1c4ae7ce73c9d4",
+    "profile_positions": 8260,
+    "gdata4_decomposition_reference_dem_filter_v1": {
+        "note": "diagnostic only: feature reference vs 1 m reference DEM + FilterConfig-v1 (filter-only effect)",
+        "feature_tp": 37,
+        "feature_fn": 5,
+        "feature_recall": 0.8809523809523809,
+        "median_peak_grade_attenuation_pp": 2.775389845724305,
+        "peak_grade_attenuation_pp": {
+            "n": 37,
+            "mean_abs": 3.425060595087296,
+            "p50": 2.775389845724305,
+            "p90": 6.751091563772546,
+            "p95": 7.433002016830925,
+            "p99": 11.668170850260084,
+            "max": 11.668170850260084,
+            "bias_mean_signed": 3.425060595087296
+        },
+        "lost_severe_short_features": [
+            {
+                "route": "T3-GORA-KALWARIA",
+                "event": {
+                    "type": "DESCENT",
+                    "class": "SHORT",
+                    "start_m": 5110.0,
+                    "end_m": 5120.0,
+                    "max_grade_pct": -15.031247672019447,
+                    "elev_change_m": -3.821501741777098
+                }
+            },
+            {
+                "route": "T3-GORA-KALWARIA",
+                "event": {
+                    "type": "DESCENT",
+                    "class": "SHORT",
+                    "start_m": 5835.0,
+                    "end_m": 5860.0,
+                    "max_grade_pct": -15.356025399396117,
+                    "elev_change_m": -4.276525567258105
+                }
+            },
+            {
+                "route": "T4-PLOCK",
+                "event": {
+                    "type": "CLIMB",
+                    "class": "SHORT",
+                    "start_m": 475.0,
+                    "end_m": 510.0,
+                    "max_grade_pct": 38.84460052781304,
+                    "elev_change_m": 9.371897265892258
+                }
+            },
+            {
+                "route": "T7-WARSZAWA",
+                "event": {
+                    "type": "DESCENT",
+                    "class": "SHORT",
+                    "start_m": 70.0,
+                    "end_m": 105.0,
+                    "max_grade_pct": -13.898229970653404,
+                    "elev_change_m": -3.887813917323868
+                }
+            }
+        ]
+    },
+    "u2_reference_statistics": {
+        "T1-KAMPINOS": {
+            "abs_dh_next_300m": {
+                "n": 1165,
+                "mean_abs": 1.2308888561462605,
+                "p50": 0.5054041925653223,
+                "p90": 4.053434018500724,
+                "p95": 5.565314595314746,
+                "p99": 9.031217760134368,
+                "max": 11.28544575856472,
+                "bias_mean_signed": -0.10215335831563556
+            },
+            "abs_dh_next_600m": {
+                "n": 1105,
+                "mean_abs": 1.4044157274050326,
+                "p50": 0.6857631001853974,
+                "p90": 4.078407901264043,
+                "p95": 5.521654132824409,
+                "p99": 7.96413563600116,
+                "max": 11.544677666618739,
+                "bias_mean_signed": -0.10790575390459155
+            },
+            "abs_grade_pct": {
+                "n": 1218,
+                "mean_abs": 1.6753030619261442,
+                "p50": 0.5631655193388951,
+                "p90": 3.9766426189022464,
+                "p95": 8.267382955667472,
+                "p99": 17.211363772059315,
+                "max": 28.850236679462054,
+                "bias_mean_signed": -0.06805612529920642
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 996,
+                "2-4": 101,
+                "4-7": 45,
+                "7-10": 27,
+                "10-15": 29,
+                ">=15": 20
+            },
+            "events_standard": 4,
+            "events_short": 7,
+            "climbs": 5,
+            "descents": 6,
+            "event_length_m": {
+                "n": 11,
+                "mean_abs": 42.72727272727273,
+                "p50": 45.0,
+                "p90": 55.0,
+                "p95": 60.0,
+                "p99": 60.0,
+                "max": 60.0,
+                "bias_mean_signed": 42.72727272727273
+            },
+            "profile_length_m": 6115.7209654507
+        },
+        "T2-SZYDLOWIEC": {
+            "abs_dh_next_300m": {
+                "n": 1195,
+                "mean_abs": 3.131744984341472,
+                "p50": 2.3423879406786625,
+                "p90": 7.316214840178191,
+                "p95": 8.87378566757215,
+                "p99": 11.337907827984537,
+                "max": 12.251477802733689,
+                "bias_mean_signed": -0.2675747566891604
+            },
+            "abs_dh_next_600m": {
+                "n": 1135,
+                "mean_abs": 5.254950398991103,
+                "p50": 3.306980232672231,
+                "p90": 13.659236454157053,
+                "p95": 14.881338314776315,
+                "p99": 17.81265657886692,
+                "max": 17.959380105425282,
+                "bias_mean_signed": -0.3493291665823739
+            },
+            "abs_grade_pct": {
+                "n": 1248,
+                "mean_abs": 1.5052982153250924,
+                "p50": 0.9455983774295191,
+                "p90": 2.9872910914857584,
+                "p95": 4.572736129963005,
+                "p99": 11.465787922207255,
+                "max": 23.977516706193114,
+                "bias_mean_signed": -0.1137985341968728
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 990,
+                "2-4": 184,
+                "4-7": 50,
+                "7-10": 7,
+                "10-15": 8,
+                ">=15": 9
+            },
+            "events_standard": 3,
+            "events_short": 2,
+            "climbs": 3,
+            "descents": 2,
+            "event_length_m": {
+                "n": 5,
+                "mean_abs": 73.0,
+                "p50": 55.0,
+                "p90": 170.0,
+                "p95": 170.0,
+                "p99": 170.0,
+                "max": 170.0,
+                "bias_mean_signed": 73.0
+            },
+            "profile_length_m": 6266.680293889326
+        },
+        "T3-GORA-KALWARIA": {
+            "abs_dh_next_300m": {
+                "n": 1174,
+                "mean_abs": 2.55551168085539,
+                "p50": 0.8876823125349205,
+                "p90": 3.775715817184306,
+                "p95": 14.569198112033902,
+                "p99": 27.64981382038161,
+                "max": 28.92872618182433,
+                "bias_mean_signed": -0.6860430468341622
+            },
+            "abs_dh_next_600m": {
+                "n": 1114,
+                "mean_abs": 4.690675989863143,
+                "p50": 1.5882337807093165,
+                "p90": 20.080536576640952,
+                "p95": 27.51312110830743,
+                "p99": 28.188830368213203,
+                "max": 28.441552841838003,
+                "bias_mean_signed": -1.448889576422767
+            },
+            "abs_grade_pct": {
+                "n": 1228,
+                "mean_abs": 1.6693040091170155,
+                "p50": 0.6022159325534631,
+                "p90": 2.7059400434020517,
+                "p95": 6.703880883498754,
+                "p99": 25.980105158853917,
+                "max": 40.93041099721114,
+                "bias_mean_signed": -0.22427087314294178
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 1076,
+                "2-4": 65,
+                "4-7": 29,
+                "7-10": 14,
+                "10-15": 17,
+                ">=15": 27
+            },
+            "events_standard": 2,
+            "events_short": 5,
+            "climbs": 4,
+            "descents": 3,
+            "event_length_m": {
+                "n": 7,
+                "mean_abs": 45.714285714285715,
+                "p50": 30.0,
+                "p90": 120.0,
+                "p95": 120.0,
+                "p99": 120.0,
+                "max": 120.0,
+                "bias_mean_signed": 45.714285714285715
+            },
+            "profile_length_m": 6164.011308664004
+        },
+        "T4-PLOCK": {
+            "abs_dh_next_300m": {
+                "n": 1053,
+                "mean_abs": 4.218929354762112,
+                "p50": 1.447076281341623,
+                "p90": 14.977857653696148,
+                "p95": 17.857231155027847,
+                "p99": 24.239052569900124,
+                "max": 25.517906541732543,
+                "bias_mean_signed": -8.712702428624139E-4
+            },
+            "abs_dh_next_600m": {
+                "n": 993,
+                "mean_abs": 5.007165985152191,
+                "p50": 2.2249818392889864,
+                "p90": 15.523721453645251,
+                "p95": 20.122449762048532,
+                "p99": 24.917396219289586,
+                "max": 26.782199865211794,
+                "bias_mean_signed": -0.09458577413654636
+            },
+            "abs_grade_pct": {
+                "n": 1107,
+                "mean_abs": 2.2505236958645627,
+                "p50": 0.675947637292893,
+                "p90": 4.962525926567821,
+                "p95": 8.48371841614238,
+                "p99": 32.39871896375746,
+                "max": 50.91487946646009,
+                "bias_mean_signed": -0.035582734757499755
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 853,
+                "2-4": 112,
+                "4-7": 71,
+                "7-10": 22,
+                "10-15": 24,
+                ">=15": 25
+            },
+            "events_standard": 4,
+            "events_short": 3,
+            "climbs": 3,
+            "descents": 4,
+            "event_length_m": {
+                "n": 7,
+                "mean_abs": 82.85714285714286,
+                "p50": 50.0,
+                "p90": 175.0,
+                "p95": 175.0,
+                "p99": 175.0,
+                "max": 175.0,
+                "bias_mean_signed": 82.85714285714286
+            },
+            "profile_length_m": 5559.74633222841
+        },
+        "T5-BLONIE": {
+            "abs_dh_next_300m": {
+                "n": 1168,
+                "mean_abs": 0.8259076809126706,
+                "p50": 0.591441384775294,
+                "p90": 2.078436233700927,
+                "p95": 2.447360544059862,
+                "p99": 2.7732191439519482,
+                "max": 2.879538300177643,
+                "bias_mean_signed": -0.08133166559796386
+            },
+            "abs_dh_next_600m": {
+                "n": 1108,
+                "mean_abs": 1.1516129920090552,
+                "p50": 0.8974194911415481,
+                "p90": 2.54026571593252,
+                "p95": 2.945565438175123,
+                "p99": 3.685803117076631,
+                "max": 4.5110903785777055,
+                "bias_mean_signed": -0.1953119467569415
+            },
+            "abs_grade_pct": {
+                "n": 1222,
+                "mean_abs": 0.8529569721200494,
+                "p50": 0.5550868107158067,
+                "p90": 2.0130700703248294,
+                "p95": 2.7340188501777334,
+                "p99": 4.378058010867221,
+                "max": 7.787538263168756,
+                "bias_mean_signed": -0.016342876120717352
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 1097,
+                "2-4": 107,
+                "4-7": 15,
+                "7-10": 3,
+                "10-15": 0,
+                ">=15": 0
+            },
+            "events_standard": 0,
+            "events_short": 1,
+            "climbs": 0,
+            "descents": 1,
+            "event_length_m": {
+                "n": 1,
+                "mean_abs": 30.0,
+                "p50": 30.0,
+                "p90": 30.0,
+                "p95": 30.0,
+                "p99": 30.0,
+                "max": 30.0,
+                "bias_mean_signed": 30.0
+            },
+            "profile_length_m": 6133.693938272971
+        },
+        "T6-WYSZKOW": {
+            "abs_dh_next_300m": {
+                "n": 1053,
+                "mean_abs": 2.0105714936377397,
+                "p50": 1.3527197314679142,
+                "p90": 4.42769070863902,
+                "p95": 5.943028483510631,
+                "p99": 11.575570205335111,
+                "max": 11.7376388998414,
+                "bias_mean_signed": -0.795409541059262
+            },
+            "abs_dh_next_600m": {
+                "n": 993,
+                "mean_abs": 3.249860529892252,
+                "p50": 2.1515107781745115,
+                "p90": 9.441687122124804,
+                "p95": 10.384185894944991,
+                "p99": 12.752096039753354,
+                "max": 13.044442073086145,
+                "bias_mean_signed": -1.5186567837828795
+            },
+            "abs_grade_pct": {
+                "n": 1107,
+                "mean_abs": 1.2926834302366896,
+                "p50": 0.7774153064304414,
+                "p90": 2.6859850584625633,
+                "p95": 3.743074585015222,
+                "p99": 9.982636612087845,
+                "max": 14.120978430931357,
+                "bias_mean_signed": -0.28586342974298257
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 898,
+                "2-4": 157,
+                "4-7": 28,
+                "7-10": 13,
+                "10-15": 11,
+                ">=15": 0
+            },
+            "events_standard": 0,
+            "events_short": 5,
+            "climbs": 2,
+            "descents": 3,
+            "event_length_m": {
+                "n": 5,
+                "mean_abs": 31.0,
+                "p50": 25.0,
+                "p90": 45.0,
+                "p95": 45.0,
+                "p99": 45.0,
+                "max": 45.0,
+                "bias_mean_signed": 31.0
+            },
+            "profile_length_m": 5559.74633222762
+        },
+        "T7-WARSZAWA": {
+            "abs_dh_next_300m": {
+                "n": 1032,
+                "mean_abs": 1.984879950247174,
+                "p50": 1.049706452433739,
+                "p90": 4.817060770495175,
+                "p95": 8.468627432223457,
+                "p99": 13.760316703837532,
+                "max": 14.81656528261965,
+                "bias_mean_signed": -1.1733284836494
+            },
+            "abs_dh_next_600m": {
+                "n": 972,
+                "mean_abs": 3.343322149742708,
+                "p50": 1.4289441421448998,
+                "p90": 11.108145600512557,
+                "p95": 15.728427123161552,
+                "p99": 16.798208413187695,
+                "max": 16.841321241981504,
+                "bias_mean_signed": -2.34009010916733
+            },
+            "abs_grade_pct": {
+                "n": 1086,
+                "mean_abs": 1.3347830440439352,
+                "p50": 0.6277518714151711,
+                "p90": 3.449015229946383,
+                "p95": 5.257504212052254,
+                "p99": 11.001408214094056,
+                "max": 15.383663688736362,
+                "bias_mean_signed": -0.39783340306866455
+            },
+            "abs_grade_histogram_pct_bins": {
+                "0-2": 887,
+                "2-4": 113,
+                "4-7": 52,
+                "7-10": 18,
+                "10-15": 15,
+                ">=15": 1
+            },
+            "events_standard": 4,
+            "events_short": 2,
+            "climbs": 2,
+            "descents": 4,
+            "event_length_m": {
+                "n": 6,
+                "mean_abs": 61.666666666666664,
+                "p50": 60.0,
+                "p90": 95.0,
+                "p95": 95.0,
+                "p99": 95.0,
+                "max": 95.0,
+                "bias_mean_signed": 61.666666666666664
+            },
+            "profile_length_m": 5454.625605722708
+        }
+    },
+    "z15": {
+        "build_id": "ta001b-z15-d57556ef7d9c4592",
+        "gdata1": {
+            "points_declared": 10000,
+            "points_scored": 10000,
+            "excluded": {},
+            "reduced_confidence_samples": 0,
+            "abs_error_m": {
+                "n": 10000,
+                "mean_abs": 0.033907243943213185,
+                "p50": 0.023592326290341248,
+                "p90": 0.06707507219411468,
+                "p95": 0.09571492974002638,
+                "p99": 0.2097850155038401,
+                "max": 2.0486019122499783,
+                "bias_mean_signed": 0.0013203005751232795
+            },
+            "per_transect": {
+                "T1-KAMPINOS": {
+                    "n": 1429,
+                    "mean_abs": 0.02926144424382932,
+                    "p50": 0.023682822302603768,
+                    "p90": 0.058862216459232286,
+                    "p95": 0.074320061716449,
+                    "p99": 0.11179281269548369,
+                    "max": 0.22481122107680562,
+                    "bias_mean_signed": -8.948921527505994E-5
+                },
+                "T2-SZYDLOWIEC": {
+                    "n": 1429,
+                    "mean_abs": 0.03283438203909106,
+                    "p50": 0.02337774674180082,
+                    "p90": 0.06638192886225625,
+                    "p95": 0.08521187800977259,
+                    "p99": 0.16005713421168366,
+                    "max": 0.6568522685262224,
+                    "bias_mean_signed": 0.0019264337188115877
+                },
+                "T3-GORA-KALWARIA": {
+                    "n": 1429,
+                    "mean_abs": 0.03404795490940837,
+                    "p50": 0.024004291923134247,
+                    "p90": 0.06884959054781348,
+                    "p95": 0.09306402953484394,
+                    "p99": 0.19788385151561272,
+                    "max": 0.4485589979297373,
+                    "bias_mean_signed": 0.002122524694645776
+                },
+                "T4-PLOCK": {
+                    "n": 1429,
+                    "mean_abs": 0.03643818659542544,
+                    "p50": 0.024715279986295968,
+                    "p90": 0.07619094292361694,
+                    "p95": 0.10951150258830467,
+                    "p99": 0.24591622034060379,
+                    "max": 0.4725230614181868,
+                    "bias_mean_signed": -5.676949102679517E-4
+                },
+                "T5-BLONIE": {
+                    "n": 1428,
+                    "mean_abs": 0.033248163917099435,
+                    "p50": 0.02143905627654874,
+                    "p90": 0.06455254770772001,
+                    "p95": 0.10463765851828555,
+                    "p99": 0.2516662045086093,
+                    "max": 0.47564947219744624,
+                    "bias_mean_signed": -0.001785577506665936
+                },
+                "T6-WYSZKOW": {
+                    "n": 1428,
+                    "mean_abs": 0.03184724400386669,
+                    "p50": 0.023024132699987376,
+                    "p90": 0.06509884808717459,
+                    "p95": 0.09524806355992155,
+                    "p99": 0.17282264645119483,
+                    "max": 0.5404754721429583,
+                    "bias_mean_signed": 0.0015434009542369723
+                },
+                "T7-WARSZAWA": {
+                    "n": 1428,
+                    "mean_abs": 0.039675465652865796,
+                    "p50": 0.025259183980210764,
+                    "p90": 0.07710857161690399,
+                    "p95": 0.11531537542553849,
+                    "p99": 0.26235148436251166,
+                    "max": 2.0486019122499783,
+                    "bias_mean_signed": 0.006093829419237917
+                }
+            },
+            "worst_tiles_by_p95": [
+                {
+                    "tile": "15/18255/10793",
+                    "stats": {
+                        "n": 29,
+                        "mean_abs": 0.045586490994707636,
+                        "p50": 0.01812901046633897,
+                        "p90": 0.1381640873251655,
+                        "p95": 0.2739266726823786,
+                        "p99": 0.3029257233012004,
+                        "max": 0.3029257233012004,
+                        "bias_mean_signed": 0.0035158832548381922
+                    }
+                },
+                {
+                    "tile": "15/18260/10793",
+                    "stats": {
+                        "n": 43,
+                        "mean_abs": 0.059313068928812634,
+                        "p50": 0.029550105079934497,
+                        "p90": 0.1711600318281512,
+                        "p95": 0.24359004244048776,
+                        "p99": 0.40097537186225907,
+                        "max": 0.40097537186225907,
+                        "bias_mean_signed": -0.02480596335805579
+                    }
+                },
+                {
+                    "tile": "15/18177/10736",
+                    "stats": {
+                        "n": 139,
+                        "mean_abs": 0.04928754694859626,
+                        "p50": 0.025584630202843073,
+                        "p90": 0.11192205107820996,
+                        "p95": 0.21998958120835255,
+                        "p99": 0.4430508910446207,
+                        "max": 0.4725230614181868,
+                        "bias_mean_signed": -0.012898649167154521
+                    }
+                },
+                {
+                    "tile": "15/18257/10793",
+                    "stats": {
+                        "n": 44,
+                        "mean_abs": 0.04125439351417238,
+                        "p50": 0.021461238669772342,
+                        "p90": 0.08162519914469613,
+                        "p95": 0.1948779351021841,
+                        "p99": 0.21959686582526672,
+                        "max": 0.21959686582526672,
+                        "bias_mean_signed": -0.007192700830123497
+                    }
+                },
+                {
+                    "tile": "15/18258/10794",
+                    "stats": {
+                        "n": 108,
+                        "mean_abs": 0.04187975692328794,
+                        "p50": 0.026573954314287107,
+                        "p90": 0.07331697245521696,
+                        "p95": 0.1894930839801532,
+                        "p99": 0.2539447258185277,
+                        "max": 0.2882430615043461,
+                        "bias_mean_signed": 0.0017363511346603284
+                    }
+                }
+            ],
+            "verdict_if_primary": "PASS"
+        },
+        "unscorable_grade_positions": 0,
+        "gdata2": {
+            "abs_grade_diff_pp": {
+                "n": 8216,
+                "mean_abs": 0.09525720929890036,
+                "p50": 0.06737968383225754,
+                "p90": 0.19666910326697035,
+                "p95": 0.27460269868328174,
+                "p99": 0.5538117685869679,
+                "max": 1.4448869633445722,
+                "bias_mean_signed": 1.2015567067481177E-4
+            },
+            "per_transect": {
+                "T1-KAMPINOS": {
+                    "n": 1218,
+                    "mean_abs": 0.07611493752922079,
+                    "p50": 0.06466200180642537,
+                    "p90": 0.15664680633250327,
+                    "p95": 0.1865236745330776,
+                    "p99": 0.24096284107878319,
+                    "max": 0.2944661906678334,
+                    "bias_mean_signed": 4.449221684459064E-4
+                },
+                "T2-SZYDLOWIEC": {
+                    "n": 1248,
+                    "mean_abs": 0.09272939379543889,
+                    "p50": 0.0651806008887661,
+                    "p90": 0.19280860845753978,
+                    "p95": 0.2755591542172623,
+                    "p99": 0.5209527388713014,
+                    "max": 0.8855452118298222,
+                    "bias_mean_signed": 8.850366342946068E-5
+                },
+                "T3-GORA-KALWARIA": {
+                    "n": 1228,
+                    "mean_abs": 0.09469085420439925,
+                    "p50": 0.06503106630270858,
+                    "p90": 0.1885260962529306,
+                    "p95": 0.26348201735970633,
+                    "p99": 0.6743509322648146,
+                    "max": 0.9398236385081873,
+                    "bias_mean_signed": 2.0520431141947398E-4
+                },
+                "T4-PLOCK": {
+                    "n": 1107,
+                    "mean_abs": 0.11008799829594983,
+                    "p50": 0.0765224938222675,
+                    "p90": 0.25685977542326544,
+                    "p95": 0.3288285841333047,
+                    "p99": 0.5343113145755183,
+                    "max": 0.8282406876394366,
+                    "bias_mean_signed": 5.612070962057448E-4
+                },
+                "T5-BLONIE": {
+                    "n": 1222,
+                    "mean_abs": 0.10068066188132367,
+                    "p50": 0.06324424570135535,
+                    "p90": 0.1976832090332437,
+                    "p95": 0.33298838871576214,
+                    "p99": 0.701774753977304,
+                    "max": 1.4448869633445722,
+                    "bias_mean_signed": -3.057825495637059E-4
+                },
+                "T6-WYSZKOW": {
+                    "n": 1107,
+                    "mean_abs": 0.1048807466591512,
+                    "p50": 0.07299368550957296,
+                    "p90": 0.22327263689675192,
+                    "p95": 0.32362714802548,
+                    "p99": 0.581006255292664,
+                    "max": 0.858886583592948,
+                    "bias_mean_signed": -9.965627066626744E-4
+                },
+                "T7-WARSZAWA": {
+                    "n": 1086,
+                    "mean_abs": 0.0892416351613176,
+                    "p50": 0.0659432561650991,
+                    "p90": 0.1940038239733894,
+                    "p95": 0.24004005500347603,
+                    "p99": 0.3527152891313109,
+                    "max": 0.6863135111258316,
+                    "bias_mean_signed": 8.641300727962499E-4
+                }
+            },
+            "supplementary_raw_L25_grade_diff_pp": {
+                "n": 8216,
+                "mean_abs": 0.14820487115156722,
+                "p50": 0.10473162996544258,
+                "p90": 0.31331097740502406,
+                "p95": 0.4260970460112503,
+                "p99": 0.8092772804383794,
+                "max": 1.873808205875662,
+                "bias_mean_signed": -2.9707021493377392E-5
+            },
+            "verdict_if_primary": "PASS"
+        },
+        "gdata3": {
+            "eligible_reference_events": 36,
+            "runtime_events": 41,
+            "tp": 36,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "borderline_matched": 5,
+            "borderline_reference_unmatched": 1,
+            "borderline_runtime": 0,
+            "no_event_case_routes": [
+                "T5-BLONIE"
+            ],
+            "routes_requiring_investigation": [],
+            "outcome": "INCONCLUSIVE_INSUFFICIENT_ELIGIBLE_EVENTS",
+            "diagnostics_tp": {
+                "start_error_m_median": 0.0,
+                "start_error_m_p95": 5.0,
+                "max_grade_error_pp_median": 0.15917932522120093,
+                "max_grade_error_pp_p95": 0.7119076753039619,
+                "elev_change_error_m_median": 0.04166877424265181,
+                "elev_change_error_m_p95": 0.22924608823507242,
+                "iou_median": 1.0,
+                "iou_p95": 1.0
+            },
+            "per_route": {
+                "T1-KAMPINOS": {
+                    "eligible_reference": 10,
+                    "reference_events": 11,
+                    "runtime_events": 10,
+                    "tp": 10,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 1,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 14,
+                    "feature_tp": 10,
+                    "feature_fn": 1,
+                    "feature_eligible": 11
+                },
+                "T2-SZYDLOWIEC": {
+                    "eligible_reference": 4,
+                    "reference_events": 5,
+                    "runtime_events": 5,
+                    "tp": 4,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 1,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 5,
+                    "feature_tp": 4,
+                    "feature_fn": 0,
+                    "feature_eligible": 4
+                },
+                "T3-GORA-KALWARIA": {
+                    "eligible_reference": 6,
+                    "reference_events": 7,
+                    "runtime_events": 7,
+                    "tp": 6,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 1,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 11,
+                    "feature_tp": 7,
+                    "feature_fn": 1,
+                    "feature_eligible": 8
+                },
+                "T4-PLOCK": {
+                    "eligible_reference": 7,
+                    "reference_events": 7,
+                    "runtime_events": 7,
+                    "tp": 7,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 10,
+                    "feature_tp": 6,
+                    "feature_fn": 2,
+                    "feature_eligible": 8
+                },
+                "T5-BLONIE": {
+                    "eligible_reference": 0,
+                    "reference_events": 1,
+                    "runtime_events": 1,
+                    "tp": 0,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 1,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": null,
+                    "recall": null,
+                    "no_event_case": true,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 1,
+                    "feature_tp": 0,
+                    "feature_fn": 0,
+                    "feature_eligible": 0
+                },
+                "T6-WYSZKOW": {
+                    "eligible_reference": 3,
+                    "reference_events": 5,
+                    "runtime_events": 5,
+                    "tp": 3,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 2,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 5,
+                    "feature_tp": 5,
+                    "feature_fn": 0,
+                    "feature_eligible": 5
+                },
+                "T7-WARSZAWA": {
+                    "eligible_reference": 6,
+                    "reference_events": 6,
+                    "runtime_events": 6,
+                    "tp": 6,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 8,
+                    "feature_tp": 4,
+                    "feature_fn": 2,
+                    "feature_eligible": 6
+                }
+            }
+        },
+        "gdata4": {
+            "feature_reference_config": "FeatureRef-L25-raw",
+            "eligible_features": 42,
+            "feature_tp": 36,
+            "feature_fn": 6,
+            "feature_recall": 0.8571428571428571,
+            "all_features": 54,
+            "all_features_matched": 37,
+            "median_peak_grade_attenuation_pp": 3.0646816269904202,
+            "peak_grade_attenuation_pp": {
+                "n": 36,
+                "mean_abs": 3.6423543115813306,
+                "p50": 3.0646816269904202,
+                "p90": 7.238142786772754,
+                "p95": 7.6438922707697,
+                "p99": 11.955532397201807,
+                "max": 11.955532397201807,
+                "bias_mean_signed": 3.6423543115813306
+            },
+            "elevation_change_attenuation_m": {
+                "n": 36,
+                "mean_abs": 0.6722595796568799,
+                "p50": 0.5164649861439301,
+                "p90": 1.4619895562183416,
+                "p95": 1.6263862316843358,
+                "p99": 1.7957341627440684,
+                "max": 1.7957341627440684,
+                "bias_mean_signed": 0.5898752905951498
+            },
+            "boundary_shift_m": {
+                "n": 36,
+                "mean_abs": 4.444444444444445,
+                "p50": 5.0,
+                "p90": 10.0,
+                "p95": 10.0,
+                "p99": 10.0,
+                "max": 10.0,
+                "bias_mean_signed": 4.444444444444445
+            },
+            "tp_by_class": {
+                "STANDARD": 10,
+                "SHORT": 26
+            },
+            "fn_by_class": {
+                "STANDARD": 1,
+                "SHORT": 5
+            },
+            "lost_severe_short_features": [
+                {
+                    "route": "T3-GORA-KALWARIA",
+                    "event": {
+                        "type": "DESCENT",
+                        "class": "SHORT",
+                        "start_m": 5110.0,
+                        "end_m": 5120.0,
+                        "max_grade_pct": -15.031247672019447,
+                        "elev_change_m": -3.821501741777098
+                    }
+                },
+                {
+                    "route": "T3-GORA-KALWARIA",
+                    "event": {
+                        "type": "DESCENT",
+                        "class": "SHORT",
+                        "start_m": 5835.0,
+                        "end_m": 5860.0,
+                        "max_grade_pct": -15.356025399396117,
+                        "elev_change_m": -4.276525567258105
+                    }
+                },
+                {
+                    "route": "T4-PLOCK",
+                    "event": {
+                        "type": "CLIMB",
+                        "class": "SHORT",
+                        "start_m": 475.0,
+                        "end_m": 510.0,
+                        "max_grade_pct": 38.84460052781304,
+                        "elev_change_m": 9.371897265892258
+                    }
+                },
+                {
+                    "route": "T7-WARSZAWA",
+                    "event": {
+                        "type": "DESCENT",
+                        "class": "SHORT",
+                        "start_m": 70.0,
+                        "end_m": 105.0,
+                        "max_grade_pct": -13.898229970653404,
+                        "elev_change_m": -3.887813917323868
+                    }
+                }
+            ],
+            "verdict_if_primary": "REVIEW"
+        },
+        "cache": {
+            "max_bytes": 16777216,
+            "max_blocks": 63,
+            "block_retained_bytes": 262192,
+            "blocks_at_end": 63,
+            "evictions": 129
+        }
+    },
+    "z14": {
+        "build_id": "ta001b-z14-12aa6a9523085883",
+        "gdata1": {
+            "points_declared": 10000,
+            "points_scored": 10000,
+            "excluded": {},
+            "reduced_confidence_samples": 0,
+            "abs_error_m": {
+                "n": 10000,
+                "mean_abs": 0.0566708476605294,
+                "p50": 0.034240010972538926,
+                "p90": 0.11624213747811041,
+                "p95": 0.17736115076506564,
+                "p99": 0.44137070863723693,
+                "max": 2.9681534545475756,
+                "bias_mean_signed": 0.0014907047331196054
+            },
+            "per_transect": {
+                "T1-KAMPINOS": {
+                    "n": 1429,
+                    "mean_abs": 0.045561115837524264,
+                    "p50": 0.03375075048091958,
+                    "p90": 0.09828064689334326,
+                    "p95": 0.12819879751967278,
+                    "p99": 0.21741399729174304,
+                    "max": 0.33517543202520983,
+                    "bias_mean_signed": -0.0010840460300105934
+                },
+                "T2-SZYDLOWIEC": {
+                    "n": 1429,
+                    "mean_abs": 0.05023417517334899,
+                    "p50": 0.03369498696557116,
+                    "p90": 0.09919375533209518,
+                    "p95": 0.13921389728031386,
+                    "p99": 0.30307883742796093,
+                    "max": 1.1346139514965614,
+                    "bias_mean_signed": 0.0028511395099184243
+                },
+                "T3-GORA-KALWARIA": {
+                    "n": 1429,
+                    "mean_abs": 0.05656591132782318,
+                    "p50": 0.034967326426084355,
+                    "p90": 0.11624213747811041,
+                    "p95": 0.2000369908765549,
+                    "p99": 0.4220347490674783,
+                    "max": 0.8410308603899779,
+                    "bias_mean_signed": 0.0020376549495525406
+                },
+                "T4-PLOCK": {
+                    "n": 1429,
+                    "mean_abs": 0.06352780428665436,
+                    "p50": 0.03669365894273824,
+                    "p90": 0.13095464634841392,
+                    "p95": 0.2003953868251216,
+                    "p99": 0.5674369249910569,
+                    "max": 1.0770881492525177,
+                    "bias_mean_signed": -0.00315570602729088
+                },
+                "T5-BLONIE": {
+                    "n": 1428,
+                    "mean_abs": 0.052027214216051366,
+                    "p50": 0.027263959698544227,
+                    "p90": 0.10764377276927917,
+                    "p95": 0.1806102362739921,
+                    "p99": 0.4725494852032739,
+                    "max": 0.7817157916307735,
+                    "bias_mean_signed": -0.002505865017933112
+                },
+                "T6-WYSZKOW": {
+                    "n": 1428,
+                    "mean_abs": 0.05646707296646797,
+                    "p50": 0.03337078049347042,
+                    "p90": 0.12336420473735643,
+                    "p95": 0.19737397892610886,
+                    "p99": 0.41133300559114616,
+                    "max": 0.8137133491409401,
+                    "bias_mean_signed": 0.004100438631828538
+                },
+                "T7-WARSZAWA": {
+                    "n": 1428,
+                    "mean_abs": 0.07232019890828469,
+                    "p50": 0.04077736788903508,
+                    "p90": 0.14971282247321938,
+                    "p95": 0.24240188925885775,
+                    "p99": 0.5095645931521489,
+                    "max": 2.9681534545475756,
+                    "bias_mean_signed": 0.008195038247796346
+                }
+            },
+            "worst_tiles_by_p95": [
+                {
+                    "tile": "14/9127/5396",
+                    "stats": {
+                        "n": 29,
+                        "mean_abs": 0.1099494187471419,
+                        "p50": 0.0385216342936161,
+                        "p90": 0.36218438287311017,
+                        "p95": 0.5598862990002829,
+                        "p99": 0.6289409970545705,
+                        "max": 0.6289409970545705,
+                        "bias_mean_signed": -0.019151390133205933
+                    }
+                },
+                {
+                    "tile": "14/9151/5398",
+                    "stats": {
+                        "n": 140,
+                        "mean_abs": 0.08376775651599329,
+                        "p50": 0.03343806806803684,
+                        "p90": 0.21189441252761299,
+                        "p95": 0.3821999988089715,
+                        "p99": 0.554854857962269,
+                        "max": 0.7826152769598025,
+                        "bias_mean_signed": 0.010043579690174807
+                    }
+                },
+                {
+                    "tile": "14/9088/5369",
+                    "stats": {
+                        "n": 354,
+                        "mean_abs": 0.07879307491879639,
+                        "p50": 0.037375783197262535,
+                        "p90": 0.16541655417329082,
+                        "p95": 0.3260437096286495,
+                        "p99": 0.7183208237934764,
+                        "max": 1.0770881492525177,
+                        "bias_mean_signed": -0.00563453378323923
+                    }
+                },
+                {
+                    "tile": "14/9130/5396",
+                    "stats": {
+                        "n": 114,
+                        "mean_abs": 0.07216873064565832,
+                        "p50": 0.033074356002700256,
+                        "p90": 0.17179614261443987,
+                        "p95": 0.30841569507579436,
+                        "p99": 0.505216083587186,
+                        "max": 0.7768636117616978,
+                        "bias_mean_signed": -0.03690725745708241
+                    }
+                },
+                {
+                    "tile": "14/9088/5368",
+                    "stats": {
+                        "n": 389,
+                        "mean_abs": 0.07152587944885672,
+                        "p50": 0.03485243454329634,
+                        "p90": 0.17038730580713946,
+                        "p95": 0.2852815420162642,
+                        "p99": 0.6037357858227494,
+                        "max": 0.7298052739992897,
+                        "bias_mean_signed": -0.010326804557186743
+                    }
+                }
+            ],
+            "verdict_if_primary": "PASS"
+        },
+        "unscorable_grade_positions": 0,
+        "gdata2": {
+            "abs_grade_diff_pp": {
+                "n": 8216,
+                "mean_abs": 0.15003553462465888,
+                "p50": 0.09580505522728805,
+                "p90": 0.3109968822191148,
+                "p95": 0.47357478022524885,
+                "p99": 1.0588658643317785,
+                "max": 2.977000869760218,
+                "bias_mean_signed": -7.494791688209614E-4
+            },
+            "per_transect": {
+                "T1-KAMPINOS": {
+                    "n": 1218,
+                    "mean_abs": 0.10523779348775386,
+                    "p50": 0.08053408808348199,
+                    "p90": 0.22617836323331628,
+                    "p95": 0.28102897350112227,
+                    "p99": 0.4658653499140533,
+                    "max": 0.7073864661491598,
+                    "bias_mean_signed": 2.379788709901842E-4
+                },
+                "T2-SZYDLOWIEC": {
+                    "n": 1248,
+                    "mean_abs": 0.14926794213674527,
+                    "p50": 0.09710416885127388,
+                    "p90": 0.31114052030147843,
+                    "p95": 0.45959768279067237,
+                    "p99": 1.0999572853437487,
+                    "max": 1.666515364183397,
+                    "bias_mean_signed": -0.0012853761228134898
+                },
+                "T3-GORA-KALWARIA": {
+                    "n": 1228,
+                    "mean_abs": 0.16648395760084367,
+                    "p50": 0.09539465261150326,
+                    "p90": 0.34057008657788396,
+                    "p95": 0.5772157248771947,
+                    "p99": 1.3763967294015078,
+                    "max": 2.977000869760218,
+                    "bias_mean_signed": -3.2194991046773303E-4
+                },
+                "T4-PLOCK": {
+                    "n": 1107,
+                    "mean_abs": 0.18554759482522867,
+                    "p50": 0.11775127848414968,
+                    "p90": 0.41756552744129743,
+                    "p95": 0.6045191764421248,
+                    "p99": 1.1412097479625345,
+                    "max": 1.8464487574676682,
+                    "bias_mean_signed": 0.001362797188133634
+                },
+                "T5-BLONIE": {
+                    "n": 1222,
+                    "mean_abs": 0.14846486263477382,
+                    "p50": 0.08639894178730859,
+                    "p90": 0.29788571839281935,
+                    "p95": 0.5466556280490522,
+                    "p99": 1.342937503366443,
+                    "max": 2.060319863920938,
+                    "bias_mean_signed": -0.001469767882150715
+                },
+                "T6-WYSZKOW": {
+                    "n": 1107,
+                    "mean_abs": 0.14431155259236797,
+                    "p50": 0.09411471992831366,
+                    "p90": 0.31345043537902467,
+                    "p95": 0.43117318150069656,
+                    "p99": 0.9025082554605889,
+                    "max": 1.4109292302778158,
+                    "bias_mean_signed": -5.880420824315337E-4
+                },
+                "T7-WARSZAWA": {
+                    "n": 1086,
+                    "mean_abs": 0.15396453955492137,
+                    "p50": 0.11105166845351278,
+                    "p90": 0.33122473846958655,
+                    "p95": 0.4629529535146162,
+                    "p99": 0.8022303047228547,
+                    "max": 1.0761273604886128,
+                    "bias_mean_signed": -0.0032317428863697004
+                }
+            },
+            "supplementary_raw_L25_grade_diff_pp": {
+                "n": 8216,
+                "mean_abs": 0.24673905988283407,
+                "p50": 0.15808302113566683,
+                "p90": 0.5359353989312011,
+                "p95": 0.7875742606134963,
+                "p99": 1.5988946831947717,
+                "max": 4.573558754451882,
+                "bias_mean_signed": -0.001141283303167961
+            },
+            "verdict_if_primary": "PASS"
+        },
+        "gdata3": {
+            "eligible_reference_events": 36,
+            "runtime_events": 41,
+            "tp": 36,
+            "fp": 0,
+            "fn": 0,
+            "precision": 1.0,
+            "recall": 1.0,
+            "f1": 1.0,
+            "borderline_matched": 4,
+            "borderline_reference_unmatched": 2,
+            "borderline_runtime": 1,
+            "no_event_case_routes": [
+                "T5-BLONIE"
+            ],
+            "routes_requiring_investigation": [],
+            "outcome": "INCONCLUSIVE_INSUFFICIENT_ELIGIBLE_EVENTS",
+            "diagnostics_tp": {
+                "start_error_m_median": 0.0,
+                "start_error_m_p95": 5.0,
+                "max_grade_error_pp_median": 0.3709512078647781,
+                "max_grade_error_pp_p95": 1.6216379272948416,
+                "elev_change_error_m_median": 0.11491332445834246,
+                "elev_change_error_m_p95": 0.35934971579898445,
+                "iou_median": 1.0,
+                "iou_p95": 1.0
+            },
+            "per_route": {
+                "T1-KAMPINOS": {
+                    "eligible_reference": 10,
+                    "reference_events": 11,
+                    "runtime_events": 10,
+                    "tp": 10,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 1,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 14,
+                    "feature_tp": 10,
+                    "feature_fn": 1,
+                    "feature_eligible": 11
+                },
+                "T2-SZYDLOWIEC": {
+                    "eligible_reference": 4,
+                    "reference_events": 5,
+                    "runtime_events": 5,
+                    "tp": 4,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 1,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 5,
+                    "feature_tp": 4,
+                    "feature_fn": 0,
+                    "feature_eligible": 4
+                },
+                "T3-GORA-KALWARIA": {
+                    "eligible_reference": 6,
+                    "reference_events": 7,
+                    "runtime_events": 8,
+                    "tp": 6,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 1,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 1,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 11,
+                    "feature_tp": 7,
+                    "feature_fn": 1,
+                    "feature_eligible": 8
+                },
+                "T4-PLOCK": {
+                    "eligible_reference": 7,
+                    "reference_events": 7,
+                    "runtime_events": 7,
+                    "tp": 7,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 10,
+                    "feature_tp": 6,
+                    "feature_fn": 2,
+                    "feature_eligible": 8
+                },
+                "T5-BLONIE": {
+                    "eligible_reference": 0,
+                    "reference_events": 1,
+                    "runtime_events": 0,
+                    "tp": 0,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 1,
+                    "borderline_runtime": 0,
+                    "precision": null,
+                    "recall": null,
+                    "no_event_case": true,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 1,
+                    "feature_tp": 0,
+                    "feature_fn": 0,
+                    "feature_eligible": 0
+                },
+                "T6-WYSZKOW": {
+                    "eligible_reference": 3,
+                    "reference_events": 5,
+                    "runtime_events": 5,
+                    "tp": 3,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 2,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 5,
+                    "feature_tp": 5,
+                    "feature_fn": 0,
+                    "feature_eligible": 5
+                },
+                "T7-WARSZAWA": {
+                    "eligible_reference": 6,
+                    "reference_events": 6,
+                    "runtime_events": 6,
+                    "tp": 6,
+                    "fp": 0,
+                    "fn": 0,
+                    "borderline_matched": 0,
+                    "borderline_reference_unmatched": 0,
+                    "borderline_runtime": 0,
+                    "precision": 1.0,
+                    "recall": 1.0,
+                    "no_event_case": false,
+                    "requires_investigation": false,
+                    "unscorable_length_m": 0.0,
+                    "fp_events": [],
+                    "fn_events": [],
+                    "features": 8,
+                    "feature_tp": 4,
+                    "feature_fn": 2,
+                    "feature_eligible": 6
+                }
+            }
+        },
+        "gdata4": {
+            "feature_reference_config": "FeatureRef-L25-raw",
+            "eligible_features": 42,
+            "feature_tp": 36,
+            "feature_fn": 6,
+            "feature_recall": 0.8571428571428571,
+            "all_features": 54,
+            "all_features_matched": 37,
+            "median_peak_grade_attenuation_pp": 3.4099746705300635,
+            "peak_grade_attenuation_pp": {
+                "n": 36,
+                "mean_abs": 4.001636727102781,
+                "p50": 3.4099746705300635,
+                "p90": 7.870494816669463,
+                "p95": 9.054639944125768,
+                "p99": 12.66502899783592,
+                "max": 12.66502899783592,
+                "bias_mean_signed": 4.001636727102781
+            },
+            "elevation_change_attenuation_m": {
+                "n": 36,
+                "mean_abs": 0.7287092233788791,
+                "p50": 0.6065791263999643,
+                "p90": 1.4798709028039951,
+                "p95": 1.7179840083909426,
+                "p99": 1.85709848722054,
+                "max": 1.85709848722054,
+                "bias_mean_signed": 0.6599784349991025
+            },
+            "boundary_shift_m": {
+                "n": 36,
+                "mean_abs": 4.305555555555555,
+                "p50": 5.0,
+                "p90": 10.0,
+                "p95": 10.0,
+                "p99": 15.0,
+                "max": 15.0,
+                "bias_mean_signed": 4.305555555555555
+            },
+            "tp_by_class": {
+                "STANDARD": 10,
+                "SHORT": 26
+            },
+            "fn_by_class": {
+                "STANDARD": 1,
+                "SHORT": 5
+            },
+            "lost_severe_short_features": [
+                {
+                    "route": "T3-GORA-KALWARIA",
+                    "event": {
+                        "type": "DESCENT",
+                        "class": "SHORT",
+                        "start_m": 5110.0,
+                        "end_m": 5120.0,
+                        "max_grade_pct": -15.031247672019447,
+                        "elev_change_m": -3.821501741777098
+                    }
+                },
+                {
+                    "route": "T4-PLOCK",
+                    "event": {
+                        "type": "CLIMB",
+                        "class": "SHORT",
+                        "start_m": 475.0,
+                        "end_m": 510.0,
+                        "max_grade_pct": 38.84460052781304,
+                        "elev_change_m": 9.371897265892258
+                    }
+                },
+                {
+                    "route": "T7-WARSZAWA",
+                    "event": {
+                        "type": "DESCENT",
+                        "class": "SHORT",
+                        "start_m": 70.0,
+                        "end_m": 105.0,
+                        "max_grade_pct": -13.898229970653404,
+                        "elev_change_m": -3.887813917323868
+                    }
+                }
+            ],
+            "verdict_if_primary": "REVIEW"
+        },
+        "cache": {
+            "max_bytes": 16777216,
+            "max_blocks": 63,
+            "block_retained_bytes": 262192,
+            "blocks_at_end": 40,
+            "evictions": 0
+        }
+    }
+}
