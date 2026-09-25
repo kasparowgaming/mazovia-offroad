@@ -1,0 +1,69 @@
+{
+  "env": {
+    "PYTHONHASHSEED": "0"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git rev-parse *)",
+      "Bash(git branch --show-current)",
+      "Bash(git ls-files)",
+      "Bash(git ls-files *)",
+      "Bash(git check-attr *)",
+      "PowerShell(git status)",
+      "PowerShell(git status *)",
+      "PowerShell(git diff)",
+      "PowerShell(git diff *)",
+      "PowerShell(git log)",
+      "PowerShell(git log *)",
+      "PowerShell(git show *)",
+      "PowerShell(git rev-parse *)",
+      "PowerShell(git branch --show-current)",
+      "PowerShell(git ls-files)",
+      "PowerShell(git ls-files *)",
+      "PowerShell(git check-attr *)",
+      "PowerShell(.\\gradlew.bat :terrain:testDebugUnitTest)",
+      "PowerShell(.\\gradlew.bat :terrain:testDebugUnitTest *)",
+      "PowerShell(.\\gradlew.bat :terrain:compileDebugKotlin)",
+      "PowerShell(.\\gradlew.bat :terrain:compileDebugUnitTestKotlin)",
+      "PowerShell(.\\gradlew.bat :domain:testDebugUnitTest)",
+      "PowerShell(.\\gradlew.bat :navigation:testDebugUnitTest)",
+      "PowerShell(.\\gradlew.bat :routing:testDebugUnitTest)",
+      "PowerShell(.\\gradlew.bat :data:testDebugUnitTest)",
+      "PowerShell(python -m pytest -p no:cacheprovider tools/terrain/tests)",
+      "Bash(python -m pytest -p no:cacheprovider tools/terrain/tests)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/git-guard.js\"",
+            "timeout": 10,
+            "statusMessage": "Mazovia git guard"
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|MultiEdit|NotebookEdit|Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/frozen-guard.js\"",
+            "timeout": 10,
+            "statusMessage": "Mazovia frozen-file guard"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+# Frozen-by-default architecture set.
+# Source of truth: docs/terrain-ahead/DESIGN.md §24 "UNCHANGED — FROZEN" (reason: AUDIT §3 navigation semantics,
+# plus readiness gating semantics). DESIGN blob: b1de916ce20e06e9b3616434c165d6151a813846.
+# The .claude entries below are guard self-protection, not DESIGN §24 architecture entries.
+# Changing any entry requires: OPEN DECISION — FROZEN CLASS EXCEPTION + explicit user approval.
+#
+# Format: one repo-relative path per line; a trailing /** protects the whole directory. Matching is case-insensitive.
+# This is NOT task scope: per-task allowed paths come from the task prompt.
+
+navigation/src/main/java/pl/mazovia/offroad/navigation/NavigationManager.kt
+navigation/src/main/java/pl/mazovia/offroad/navigation/GpxNavigator.kt
+
+domain/src/main/java/pl/mazovia/offroad/domain/model/NavigationState.kt
+domain/src/main/java/pl/mazovia/offroad/domain/model/Route.kt
+domain/src/main/java/pl/mazovia/offroad/domain/model/RouteSegment.kt
+domain/src/main/java/pl/mazovia/offroad/domain/model/RouteMetrics.kt
+domain/src/main/java/pl/mazovia/offroad/domain/model/Maneuver.kt
+domain/src/main/java/pl/mazovia/offroad/domain/model/GeoPoint.kt
+
+domain/src/main/java/pl/mazovia/offroad/domain/navigation/OffRouteDetector.kt
+domain/src/main/java/pl/mazovia/offroad/domain/routing/RoutingEngine.kt
+
+domain/src/main/java/pl/mazovia/offroad/domain/gpx/GpxRoute.kt
+domain/src/main/java/pl/mazovia/offroad/domain/gpx/GpxParser.kt
+domain/src/main/java/pl/mazovia/offroad/domain/gpx/GpxWriter.kt
+
+# incl. TerrainRadarCalculator.kt (DESIGN D7)
+routing/src/main/java/pl/mazovia/offroad/routing/**
+
+app/src/main/java/pl/mazovia/offroad/location/AndroidLocationClient.kt
+app/src/main/java/pl/mazovia/offroad/service/TrackRecordingService.kt
+data/src/main/java/pl/mazovia/offroad/data/repository/SessionRepository.kt
+
+# SourceVersion shim
+app/src/main/java/javax/lang/model/SourceVersion.java
+
+# readiness gating (DESIGN §20.6)
+domain/src/main/java/pl/mazovia/offroad/domain/readiness/RidePackEvaluator.kt
+
+# Guard self-protection
+.claude/settings.json
+.claude/frozen-paths.txt
+.claude/hooks/**
+.claude/scripts/**
