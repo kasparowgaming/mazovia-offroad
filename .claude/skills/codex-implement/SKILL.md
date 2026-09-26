@@ -142,3 +142,20 @@ Also list scope violations, frozen hits, the TESTS status and reason (`GATED_TAS
 not COMPLETED), and the run directory. Treat Codex's own summary as informational only. Continue with the task's
 review step (Claude review, and for CRITICAL tasks `/codex-review`). Do not start another Codex run
 automatically. An OPEN_DECISION goes to the user.
+
+## 5. Compact result (DEV-ENV-002B)
+
+After the machine outcome, keep the rest of the report to these sections:
+
+```
+STATUS          <exit meaning, run id, subject_fingerprint>
+FILES_CHANGED   <paths from the scope evaluation>
+TESTS           <per test: id / count / PASS>  or failing test(s) + short relevant excerpt + gate state
+FINDINGS        <none | compact list>
+OPEN_DECISIONS  <none | each record>
+NEXT_GATE       <from .claude\scripts\ta-status.ps1 -Task <task-id>>
+```
+
+Do not repeat the task prompt, DESIGN sections, full Gradle logs or successful command output. On PASS, give the
+command, the test count and PASS. For a later session, `.\.claude\scripts\ta-handoff.ps1 -Task <task-id>` writes a
+<= 4096-byte handoff outside the repository instead of re-pasting prompts or logs.

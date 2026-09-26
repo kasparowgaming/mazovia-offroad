@@ -22,6 +22,8 @@ Exit codes (the highest-precedence applicable code wins: 1 > 8 > 4 > 5 > 3 > 9 >
      exact task_status. Never 0; never mapped to review FINDINGS.
 The response field task_status (COMPLETED | BLOCKED | OPEN_DECISION) is the only task-completion classifier; free
 text and open_decisions records are never parsed for it. No file is reverted, deleted or cleaned for any result.
+report.json carries schema_version (REPORT_SCHEMA_VERSION) and the run identity tuple (IDENTITY_KEYS) with the
+deterministic subject fingerprint of the state the verdict is about; ta_tools.py reuses evidence only through it.
 Windows only; Python >= 3.11 standard library only.
 """
 from __future__ import annotations
@@ -47,6 +49,11 @@ from pathlib import Path
 
 VALIDATED_CODEX_VERSION = "0.155.1"
 SCHEMA_VERSION = 1
+# report.json schema (DEV-ENV-002B): explicit schema_version plus the run identity tuple consumed by ta_tools.py.
+REPORT_SCHEMA_VERSION = 1
+IDENTITY_KEYS = ("schema_version", "task_id", "repository_root_canonical", "branch", "baseline_head", "current_head",
+                 "subject_fingerprint", "run_id", "run_start_utc", "run_end_utc", "mode", "verdict", "exit_code")
+FINGERPRINT_SCHEMA = "mazovia-subject-fingerprint/1"
 
 EXIT_OK, EXIT_INTERNAL, EXIT_PRECONDITION, EXIT_CODEX, EXIT_TIMEOUT = 0, 1, 2, 3, 4
 EXIT_SCOPE, EXIT_TESTS, EXIT_FINDINGS, EXIT_INCOMPLETE, EXIT_TASK_NOT_COMPLETED = 5, 6, 7, 8, 9
@@ -592,9 +599,8 @@ def _modes(head, index, worktree) -> dict:
     return {"mode_head": head, "mode_index": index, "mode_worktree": worktree}
 
 
-def capture_manifest(repo: Path, frozen) -> dict:
-    """Content manifest. `frozen` is the parsed frozen list: ignored FROZEN / POLICY_PROTECTED files are never
-    omitted as generated output (classification precedence POLICY_PROTECTED > FROZEN > ALLOWED > OUT_OF_SCOPE)."""
+def status_entries(repo: Path) -> list[dict]:
+    """Non-ignored changed paths (porcelain v2, untracked included) with their file state; unsorted."""
     raw = git(repo, "status", "--porcelain=v2", "-z", "--untracked-files=all", "--renames").stdout
     tokens = raw.split(b"\x00")
     entries: list[dict] = []
@@ -648,7 +654,13 @@ def capture_manifest(repo: Path, frozen) -> dict:
             raise ManifestError(f"unexpected porcelain v2 record {line[:20]!r}")
     for entry in entries:
         entry["sensitive"] = is_sensitive(entry["path"])
+    return entries
 
+
+def capture_manifest(repo: Path, frozen) -> dict:
+    """Content manifest. `frozen` is the parsed frozen list: ignored FROZEN / POLICY_PROTECTED files are never
+    omitted as generated output (classification precedence POLICY_PROTECTED > FROZEN > ALLOWED > OUT_OF_SCOPE)."""
+    entries = status_entries(repo)
     ignored_raw = git(repo, "ls-files", "-z", "--others", "--ignored", "--exclude-standard").stdout
     ignored, generated_files, generated_bytes, hashed_bytes = [], 0, 0, 0
     for token in ignored_raw.split(b"\x00"):
@@ -729,6 +741,51 @@ def evaluate_scope(changes: list[dict], allowed, frozen) -> dict:
             violations.append({"path": path, "role": change["role"], "reasons": reasons})
     return {"scope": "FAIL" if violations else "PASS", "frozen": "FAIL" if frozen_hits else "PASS",
             "violations": violations, "frozen_hits": sorted(set(frozen_hits)), "changes": details}
+
+
+# --------------------------------------------------------------------------------------------- subject fingerprint
+
+def canonical_repo_root(repo) -> str:
+    """Canonical repository root: long-form, links resolved, native separators, no trailing separator."""
+    return os.path.normpath(os.path.realpath(long_path(repo)))
+
+
+def _subject_record(entry: dict) -> dict:
+    """One changed path as committed content would see it. Index-only facts (xy, index blob, rename pairing) are left
+    out, so exact-path staging of the same worktree content does not change the fingerprint."""
+    head_blob = entry.get("head_blob")
+    tracked = bool(head_blob) and head_blob.strip("0") != ""
+    record = {"path": entry["path"], "tracked": tracked, "head_blob": head_blob if tracked else None,
+              "head_mode": entry.get("mode_head") if tracked else None}
+    if entry.get("class") == "unmerged":
+        record["unmerged"] = True
+    if entry.get("submodule"):
+        record["submodule"] = entry["submodule"]
+    if entry.get("absent"):
+        record["worktree"] = {"absent": True}
+    elif entry.get("link"):
+        record["worktree"] = {"link": entry.get("target")}
+    elif entry.get("directory"):
+        record["worktree"] = {"directory": True}
+    else:
+        mode = entry.get("mode_worktree")
+        record["worktree"] = {"mode": mode if mode and mode != "000000" else "100644", "sha256": entry.get("sha256")}
+    return record
+
+
+def subject_fingerprint(repo_root: str, head: str, entries) -> str:
+    """Deterministic SHA-256 over HEAD and every non-ignored changed path (tracked state, mode, content hash).
+
+    Canonical path order (UTF-8 bytes); only hashes and modes enter the digest, never file contents."""
+    records = sorted((_subject_record(e) for e in entries),
+                     key=lambda r: (r["path"].encode("utf-8", "surrogateescape"), canonical_json(r)))
+    payload = {"schema": FINGERPRINT_SCHEMA, "repository_root": repo_root, "head": head, "entries": records}
+    return sha256_bytes(canonical_json(payload).encode("utf-8"))
+
+
+def normalized_test_command(test: dict) -> str:
+    """Exact normalized identity of a required test (argv, cwd and contract env)."""
+    return canonical_json({"argv": list(test["argv"]), "cwd": test["cwd"], "env": dict(sorted(test["env"].items()))})
 
 
 # --------------------------------------------------------------------------------------------- Windows Job Object
@@ -1103,6 +1160,8 @@ class Run:
         self.evidence_failure = False
         self.tampered = False
         self.task_status: str | None = None  # set only from a schema-valid, cross-field-valid response
+        self.identity_base: dict | None = None   # branch + HEAD at baseline
+        self.identity_state: dict | None = None  # the state the run's verdict is about (fingerprinted)
 
     def write_tracked(self, name: str, data: bytes) -> Path:
         path = self.run_dir / name
@@ -1531,14 +1590,49 @@ def finalize(run: Run, exit_code: int | None = None) -> int:
     code = exit_code if exit_code is not None and not run.tampered else compute_exit(run)
     outcome = {"execution": run.status["EXECUTION"], "response": run.status["RESPONSE"],
                "task_status": run.task_status, "wrapper_exit_code": code}
-    run.report.update(status=run.status, exit_code=code, wrapper_exit_code=code, task_status=run.task_status,
-                      outcome=outcome, finished_utc=utc_now(), artifact_hashes=artifact_hashes(run.run_dir))
+    finished = utc_now()
+    identity = build_identity(run, code, finished)
+    run.report.update(schema_version=REPORT_SCHEMA_VERSION, identity=identity, status=run.status, exit_code=code,
+                      wrapper_exit_code=code, task_status=run.task_status, outcome=outcome, finished_utc=finished,
+                      test_evidence=required_test_evidence(run, identity["subject_fingerprint"]),
+                      artifact_hashes=artifact_hashes(run.run_dir))
     run.report["response_findings"] = response_findings(run.report)
     run.report.setdefault("artifacts", "VERIFIED")
     write_json(run.run_dir / "report.json", run.report)
     print(json.dumps({"run_id": run.run_id, "run_dir": str(run.run_dir), "exit_code": code, "outcome": outcome,
-                      "status": run.status, "reasons": run.report["reasons"]}, indent=2))
+                      "status": run.status, "subject_fingerprint": identity["subject_fingerprint"],
+                      "reasons": run.report["reasons"]}, indent=2))
     return code
+
+
+def build_identity(run: Run, code: int, end_utc: str) -> dict:
+    """Run identity tuple (IDENTITY_KEYS). subject_fingerprint is null unless the fingerprinted state was stable."""
+    state, base = run.identity_state, run.identity_base or {}
+    current = fingerprint = None
+    if state is not None and state.get("stable"):
+        current = state["head"]["head"]
+        fingerprint = subject_fingerprint(canonical_repo_root(run.repo), current, state["manifest"]["entries"])
+    verdict = run.status["REVIEW"] if run.mode == "review" else ("COMPLETED" if code == EXIT_OK else "NOT_COMPLETED")
+    return {"schema_version": REPORT_SCHEMA_VERSION, "task_id": run.contract["task_id"],
+            "repository_root_canonical": canonical_repo_root(run.repo), "branch": base.get("branch"),
+            "baseline_head": base.get("head"), "current_head": current, "subject_fingerprint": fingerprint,
+            "run_id": run.run_id, "run_start_utc": run.report["started_utc"], "run_end_utc": end_utc,
+            "mode": run.mode, "verdict": verdict, "exit_code": code}
+
+
+def required_test_evidence(run: Run, fingerprint: str | None) -> list[dict]:
+    """Per required test: normalized command, status, exit code and the subject fingerprint it ran against (only
+    for PASS on a captured, unchanged post-test state)."""
+    tests = run.report.get("tests") or {}
+    usable = fingerprint if tests.get("post_test_state_captured") and not tests.get("introduced_by_tests") else None
+    results = {r["id"]: r for r in tests.get("results", [])}
+    out = []
+    for spec in run.contract["required_tests"]:
+        result = results.get(spec["id"]) or {}
+        status = result.get("status", "NOT_RUN")
+        out.append({"id": spec["id"], "command": normalized_test_command(spec), "status": status,
+                    "exit_code": result.get("exit_code"), "subject_fingerprint": usable if status == "PASS" else None})
+    return out
 
 
 # --------------------------------------------------------------------------------------------- main flow
@@ -1587,6 +1681,9 @@ def execute(args, contract: dict, prompt_bytes: bytes, contract_bytes: bytes, re
             run.reason(f"BASELINE_INCOMPLETE: {exc}")
             return finalize(run)
         run.write_tracked_json("baseline.json", baseline)
+        branch = baseline["head"]["branch"]
+        run.identity_base = {"branch": branch[len("refs/heads/"):] if branch.startswith("refs/heads/") else branch,
+                             "head": baseline["head"]["head"]}
         precondition_state(run, baseline, parent, subject)
     except RunnerError as exc:
         run.reason(f"{exc.code}: {exc.detail}")
@@ -1654,6 +1751,7 @@ def run_codex_and_validate(run: Run, prefix, baseline: dict, frozen: list[str], 
     task_prompt = (run_dir / "prompt.txt").read_text(encoding="utf-8")
     if run.mode == "review":
         pre_state = capture_state(repo, True, frozen)
+        run.identity_state = pre_state
         try:
             run.report["review_bundle"] = build_review_bundle(run, subject, pre_state)
         except (ManifestError, OSError) as exc:
@@ -1687,6 +1785,8 @@ def run_codex_and_validate(run: Run, prefix, baseline: dict, frozen: list[str], 
     try:
         post = capture_state(repo, stable, frozen)
         write_json(run_dir / ("post-review-state.json" if run.mode == "review" else "post-state.json"), post)
+        if run.mode == "implement":
+            run.identity_state = post
     except (ManifestError, OSError, subprocess.SubprocessError) as exc:
         run.evidence_failure = True
         run.reason(f"POST_STATE_INCOMPLETE: {exc}")
@@ -1729,6 +1829,7 @@ def run_codex_and_validate(run: Run, prefix, baseline: dict, frozen: list[str], 
                 try:
                     post_test = capture_state(repo, test_stable, frozen)
                     write_json(run_dir / "post-test-state.json", post_test)
+                    run.identity_state = post_test
                     tests["post_test_state_captured"] = True
                     introduced = [c["path"] for c in manifest_diff(post["manifest"], post_test["manifest"])]
                     tests["introduced_by_tests"] = introduced
@@ -1793,9 +1894,9 @@ def cmd_show(run_id: str) -> int:
         print(f"no report at {path}", file=sys.stderr)
         return EXIT_PRECONDITION
     report = strict_json_loads(path.read_text(encoding="utf-8"))
-    summary = {k: report.get(k) for k in ("run_id", "mode", "kind", "task_id", "task_status", "wrapper_exit_code",
-                                          "exit_code", "outcome", "status", "reasons", "artifacts",
-                                          "push_prevention", "scope_note")}
+    summary = {k: report.get(k) for k in ("schema_version", "run_id", "mode", "kind", "task_id", "task_status",
+                                          "wrapper_exit_code", "exit_code", "outcome", "status", "reasons",
+                                          "artifacts", "push_prevention", "scope_note", "identity")}
     summary["violations"] = (report.get("scope") or {}).get("violations")
     response = report.get("response") or {}
     summary["open_decisions"] = response.get("open_decisions")

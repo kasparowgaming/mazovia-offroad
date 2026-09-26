@@ -1081,3 +1081,61 @@ def test_c6_invalid_response_findings_not_shown(env, capsys):
            "findings": [REVIEW_FINDING], "open_decisions": []}
     code, out, rep = env.run(env.contract(), exec_actions(write_action("src/a.txt"), final=bad), capsys)
     assert code == 3 and rep["response_findings"]["findings"] is None
+
+
+# ----------------------------------------------------------------------------------------- DEV-ENV-002B identity I1-I5
+
+def test_i1_report_schema_version_and_identity_tuple(env, capsys):
+    import ta_tools
+    code, out, rep = env.run(env.contract(), exec_actions(write_action("src/a.txt")), capsys)
+    ident = rep["identity"]
+    assert code == 0 and rep["schema_version"] == cd.REPORT_SCHEMA_VERSION == 1
+    assert sorted(ident) == sorted(cd.IDENTITY_KEYS) and ident["schema_version"] == 1
+    head = sh(env.repo, "rev-parse", "HEAD").strip()
+    assert (ident["run_id"], ident["task_id"], ident["mode"], ident["branch"]) == (out["run_id"], "TA-TEST", "implement", "main")
+    assert ident["baseline_head"] == ident["current_head"] == head
+    assert ident["repository_root_canonical"] == cd.canonical_repo_root(env.repo)
+    assert (ident["verdict"], ident["exit_code"]) == ("COMPLETED", 0)
+    assert ident["run_start_utc"] == rep["started_utc"] and ident["run_end_utc"] == rep["finished_utc"]
+    assert out["subject_fingerprint"] == ident["subject_fingerprint"] == ta_tools.collect_state(env.repo)["fingerprint"]
+    assert SECRET not in json.dumps(ident)
+
+
+def test_i2_review_identity_is_current_evidence_for_ta_tools(env, capsys, monkeypatch):
+    import ta_tools
+    monkeypatch.setattr(ta_tools, "evidence_root", lambda: env.tmp / "evidence")
+    code, out, _ = env.run(env.contract(), exec_actions(write_action("src/a.txt")), capsys)
+    code, _, rep = env.run(review_contract(env, out["run_id"]), {}, capsys, prompt="Review.")
+    assert code == 0 and (rep["identity"]["mode"], rep["identity"]["verdict"]) == ("review", "CLEAN")
+    ev = ta_tools.evaluate(ta_tools.collect_state(env.repo), "TA-TEST", *ta_tools.scan_artifacts())
+    assert (ev["review"]["state"], ev["review"]["currency"], ev["evidence"]) == ("CLEAN", "CURRENT", "CURRENT")
+    assert (ev["authority"]["state"], ev["authority"]["source_run"], ev["scope"]["state"]) == ("VALID", out["run_id"], "PASS")
+    write(env.repo / "src/a.txt", "edited after review\n")
+    ev = ta_tools.evaluate(ta_tools.collect_state(env.repo), "TA-TEST", *ta_tools.scan_artifacts())
+    assert (ev["review"]["currency"], ev["evidence"]) == ("STALE", "STALE")
+
+
+def test_i3_required_test_evidence_carries_fingerprint(env, capsys):
+    env.gradle()
+    scenario = {**exec_actions(write_action("src/a.txt")),
+                "sandbox": {"gradle": {"exit": 0, "junit": {"tests": 3, "failures": 0}}}}
+    code, _, rep = env.run(env.contract(required_tests=[GRADLE_TEST]), scenario, capsys)
+    assert code == 0 and rep["test_evidence"] == [
+        {"id": "unit", "command": cd.normalized_test_command(GRADLE_TEST), "status": "PASS", "exit_code": 0,
+         "subject_fingerprint": rep["identity"]["subject_fingerprint"]}]
+
+
+def test_i4_failed_test_evidence_has_no_fingerprint(env, capsys):
+    env.gradle()
+    scenario = {**exec_actions(write_action("src/a.txt")), "sandbox": {"gradle": {"exit": 1}}}
+    code, _, rep = env.run(env.contract(required_tests=[GRADLE_TEST]), scenario, capsys)
+    assert code == 6 and rep["identity"]["verdict"] == "NOT_COMPLETED"
+    assert [(t["status"], t["subject_fingerprint"]) for t in rep["test_evidence"]] == [("FAIL", None)]
+
+
+def test_i5_precondition_failure_identity_has_no_fingerprint(env, capsys):
+    write(env.repo / "src/a.txt", "dirty\n")
+    code, _, rep = env.run(env.contract(), exec_actions(), capsys)
+    assert code == 2 and rep["schema_version"] == 1
+    assert rep["identity"]["subject_fingerprint"] is None and rep["identity"]["verdict"] == "NOT_COMPLETED"
+    assert rep["identity"]["exit_code"] == 2 and rep["identity"]["baseline_head"] is not None

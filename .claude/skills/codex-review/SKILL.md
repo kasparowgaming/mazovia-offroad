@@ -116,3 +116,10 @@ In review mode TESTS is always NOT_APPLICABLE. The subject's test evidence is in
 `review-input\subject_tests.json`. Any test results the reviewer claims to have observed are informational only.
 Whether findings need a corrective pass is Claude's or the user's decision. At most one corrective, never started
 automatically.
+
+## 5. Compact result (DEV-ENV-002B)
+
+After the machine outcome, use the same compact sections as `/codex-implement` (STATUS with the review run id and
+subject_fingerprint, FILES_CHANGED, TESTS, FINDINGS, OPEN_DECISIONS, NEXT_GATE from
+`.\.claude\scripts\ta-status.ps1 -Task <task-id>`). A REVIEW CLEAN counts only for the exact subject fingerprint it
+reviewed: any later change makes it STALE, and `ta-finalize` refuses stale reviews.
