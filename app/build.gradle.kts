@@ -45,6 +45,7 @@ dependencies {
     implementation(project(":data"))
     implementation(project(":routing"))
     implementation(project(":navigation"))
+    implementation(project(":terrain"))
     implementation(project(":designsystem"))
 
     // AndroidX Core
