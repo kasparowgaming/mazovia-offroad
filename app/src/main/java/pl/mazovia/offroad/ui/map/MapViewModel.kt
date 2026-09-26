@@ -65,6 +65,8 @@ class MapViewModel(
     val centerRequests: StateFlow<Long> = _centerRequests.asStateFlow()
 
     private var locationJob: Job? = null
+    // Wakes a pending location retry early; conflated so repeated tracking requests never queue retries.
+    private val locationRetrySignal = kotlinx.coroutines.channels.Channel<Unit>(kotlinx.coroutines.channels.Channel.CONFLATED)
     private var searchJob: Job? = null
     private var routeCalculationJob: Job? = null
     private val requestGeneration = java.util.concurrent.atomic.AtomicInteger(0)
@@ -74,22 +76,61 @@ class MapViewModel(
         startTracking()
     }
 
+    /**
+     * Idempotent: at most one map location subscription per ViewModel. While tracking is already running (including
+     * a pending retry) a call only wakes that retry early, so the recenter button still re-arms a failed feed at once.
+     */
     fun startTracking() {
-        if (locationJob?.isActive == true) return
-        locationJob = viewModelScope.launch {
-            try {
+        if (locationJob?.isActive == true) {
+            locationRetrySignal.trySend(Unit)
+            return
+        }
+        locationJob = viewModelScope.launch { collectLocationWithRecovery() }
+    }
+
+    /**
+     * A thrown or completed subscription is retried with a capped backoff for the lifetime of [viewModelScope]; an open
+     * subscription without fixes is normal no-fix operation and is left alone. Cancellation stops the collection, the
+     * pending delay and all later attempts. Logs never contain coordinates.
+     */
+    private suspend fun collectLocationWithRecovery() {
+        var consecutiveFailures = 0
+        while (true) {
+            logLocation("subscription attempt (consecutive failures: $consecutiveFailures)")
+            // A wake-up sent before this attempt or before its last update is stale; one sent after that must still
+            // shorten the next retry, so nothing is drained after a failure.
+            locationRetrySignal.tryReceive()
+            var receivedUpdate = false
+            val failure = try {
                 locationClient.getLocationUpdates(2000L).collect { update ->
+                    if (!receivedUpdate) {
+                        receivedUpdate = true
+                        logLocation(
+                            if (consecutiveFailures > 0) "subscription recovered after $consecutiveFailures failures"
+                            else "subscription delivering updates"
+                        )
+                        consecutiveFailures = 0
+                    }
                     _uiState.update { it.copy(currentPosition = update.point) }
                     android.util.Log.d("MapLocationPipeline", "LOCATION_RECEIVED: lat=${update.point.latitude}, lon=${update.point.longitude}")
                     if (!hasAutoCentered) {
                         hasAutoCentered = true
                         centerOnPosition()
                     }
+                    // Drained after the auto-center above, whose startTracking() call must not wake a later retry.
+                    locationRetrySignal.tryReceive()
                 }
+                "flow completed"
             } catch (e: kotlinx.coroutines.CancellationException) { throw e
             } catch (e: Exception) {
-                android.util.Log.e("MapViewModel", "Location unavailable", e)
                 _uiState.update { it.copy(currentPosition = null) }
+                e::class.java.simpleName
+            }
+            consecutiveFailures++
+            val delayMs = locationRetryDelayMs(consecutiveFailures)
+            logLocation("subscription failed: $failure; retry #$consecutiveFailures in $delayMs ms")
+            if (kotlinx.coroutines.withTimeoutOrNull(delayMs) { locationRetrySignal.receive() } != null) {
+                logLocation("retry woken early by tracking request")
             }
         }
     }
@@ -298,5 +339,20 @@ class MapViewModel(
                 }
             }
         }
+    }
+
+    private fun logLocation(message: String) {
+        android.util.Log.i(LOCATION_LOG_TAG, message)
+    }
+
+    internal companion object {
+        const val LOCATION_RETRY_INITIAL_DELAY_MS = 1_000L
+        const val LOCATION_RETRY_MAX_DELAY_MS = 30_000L
+        const val LOCATION_LOG_TAG = "MapLocation"
+
+        /** 1 s, 2 s, 4 s, 8 s, 16 s, then 30 s for every later consecutive failure. */
+        fun locationRetryDelayMs(consecutiveFailures: Int): Long =
+            (LOCATION_RETRY_INITIAL_DELAY_MS shl (consecutiveFailures - 1).coerceIn(0, 5))
+                .coerceAtMost(LOCATION_RETRY_MAX_DELAY_MS)
     }
 }

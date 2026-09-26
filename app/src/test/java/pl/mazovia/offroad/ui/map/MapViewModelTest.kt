@@ -10,7 +10,6 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.*
 import org.junit.After
 import org.junit.Assert.*
@@ -28,6 +27,7 @@ import pl.mazovia.offroad.state.AppModeManager
 class MapViewModelTest {
 
     private val testDispatcher = StandardTestDispatcher()
+    private val store = androidx.lifecycle.ViewModelStore()
 
     @Before
     fun setup() {
@@ -35,10 +35,12 @@ class MapViewModelTest {
         mockkStatic(android.util.Log::class)
         every { android.util.Log.d(any(), any()) } returns 0
         every { android.util.Log.e(any(), any(), any()) } returns 0
+        every { android.util.Log.i(any(), any()) } returns 0
     }
 
     @After
     fun teardown() {
+        store.clear()
         Dispatchers.resetMain()
         unmockkAll()
     }
@@ -88,10 +90,16 @@ class MapViewModelTest {
         }
     }
 
+    private fun liveFeed(vararg updates: LocationUpdate) = kotlinx.coroutines.flow.flow {
+        updates.forEach { emit(it) }
+        kotlinx.coroutines.awaitCancellation()
+    }
+
     private fun createViewModel(engine: AdversarialRoutingEngine, gps: Boolean = true): MapViewModel {
         val location = mockk<LocationClient>()
+        // Live subscriptions stay open (a completed one is resubscribed); no GPS is an open subscription without fixes.
         every { location.getLocationUpdates(any()) } returns if (gps)
-            flowOf(LocationUpdate(GeoPoint(52.1567802, 22.3448868), null, null)) else kotlinx.coroutines.flow.emptyFlow()
+            liveFeed(LocationUpdate(GeoPoint(52.1567802, 22.3448868), null, null)) else liveFeed()
         val model = MapViewModel(
             routingEngine = engine,
             navigationManager = mockk(relaxed = true),
@@ -219,7 +227,7 @@ class MapViewModelTest {
         val mode = AppModeManager()
         val location = mockk<LocationClient>()
         val position = GeoPoint(52.1567802, 22.3448868)
-        every { location.getLocationUpdates(any()) } returns flowOf(LocationUpdate(position, null, null))
+        every { location.getLocationUpdates(any()) } returns liveFeed(LocationUpdate(position, null, null))
         var recordings = 0
         val model = MapViewModel(engine, navigation, mode, location, mockk(relaxed = true),
             mockk(relaxed = true), mockk(relaxed = true), hasLocationPermission = { true }, startRecording = { recordings++ })
@@ -240,6 +248,218 @@ class MapViewModelTest {
         model.startNavigation()
         assertEquals(1, engine.requests.size)
         verify(exactly = 2) { navigation.startNavigation(route) }
+    }
+
+    // --- TASK-MAP-LOC-001: map location feed recovery -------------------------------------------------------------
+
+    /**
+     * Each subscription follows the next script (a silent open subscription once scripts run out) and records its
+     * virtual start time; [active] counts subscriptions currently being collected.
+     */
+    private class ScriptedLocationClient(private val scheduler: TestCoroutineScheduler) : LocationClient {
+        val scripts = ArrayDeque<suspend kotlinx.coroutines.flow.FlowCollector<LocationUpdate>.() -> Unit>()
+        val attemptTimes = mutableListOf<Long>()
+        var throwOnCall: Exception? = null
+        var active = 0
+        var maxActive = 0
+
+        override fun getLocationUpdates(intervalMs: Long): kotlinx.coroutines.flow.Flow<LocationUpdate> {
+            attemptTimes += scheduler.currentTime
+            throwOnCall?.let { throwOnCall = null; throw it }
+            val script = scripts.removeFirstOrNull() ?: { kotlinx.coroutines.awaitCancellation() }
+            return kotlinx.coroutines.flow.flow {
+                active++
+                maxActive = maxOf(maxActive, active)
+                try { script() } finally { active-- }
+            }
+        }
+    }
+
+    private val fix = LocationUpdate(GeoPoint(52.1567802, 22.3448868), null, null)
+    private val gpsOff = LocationClient.LocationException("GPS jest wyłączony")
+
+    private fun failAtStart(): suspend kotlinx.coroutines.flow.FlowCollector<LocationUpdate>.() -> Unit = { throw gpsOff }
+    private fun emitThenHang(): suspend kotlinx.coroutines.flow.FlowCollector<LocationUpdate>.() -> Unit =
+        { emit(fix); kotlinx.coroutines.awaitCancellation() }
+
+    private fun trackingViewModel(client: LocationClient): MapViewModel {
+        val factory = object : androidx.lifecycle.ViewModelProvider.Factory {
+            override fun <T : androidx.lifecycle.ViewModel> create(modelClass: Class<T>): T {
+                @Suppress("UNCHECKED_CAST")
+                return MapViewModel(
+                    AdversarialRoutingEngine(), mockk(relaxed = true), mockk(relaxed = true), client,
+                    mockk(relaxed = true), mockk(relaxed = true), mockk(relaxed = true)
+                ) as T
+            }
+        }
+        return androidx.lifecycle.ViewModelProvider(store, factory)[MapViewModel::class.java]
+    }
+
+    @Test fun `successful startup subscribes once, delivers the position and never retries`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { scripts += emitThenHang() }
+        val model = trackingViewModel(client)
+        runCurrent()
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+        assertEquals(1, client.active)
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(listOf(0L), client.attemptTimes)
+        assertEquals(1, client.maxActive)
+    }
+
+    @Test fun `failure thrown by getLocationUpdates itself is retried after the initial delay`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { throwOnCall = gpsOff; scripts += emitThenHang() }
+        val model = trackingViewModel(client)
+        runCurrent()
+        assertNull(model.uiState.value.currentPosition)
+        advanceTimeBy(999); runCurrent()
+        assertEquals(listOf(0L), client.attemptTimes)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(listOf(0L, 1_000L), client.attemptTimes)
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+    }
+
+    @Test fun `location off at startup recovers in the same ViewModel once location is back`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply {
+            repeat(3) { scripts += failAtStart() }
+            scripts += emitThenHang()
+        }
+        val model = trackingViewModel(client)
+        runCurrent()
+        assertNull(model.uiState.value.currentPosition)
+        assertEquals(0, client.active)
+        advanceTimeBy(7_000); runCurrent()
+        assertEquals(listOf(0L, 1_000L, 3_000L, 7_000L), client.attemptTimes)
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+        assertEquals(1, client.active)
+        assertEquals(1, client.maxActive)
+        verify { android.util.Log.i(MapViewModel.LOCATION_LOG_TAG, "subscription recovered after 3 failures") }
+    }
+
+    @Test fun `repeated failures back off to the cap without busy looping or stacking subscriptions`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { repeat(100) { scripts += failAtStart() } }
+        trackingViewModel(client)
+        advanceTimeBy(151_000); runCurrent()
+        assertEquals(listOf(0L, 1_000L, 3_000L, 7_000L, 15_000L, 31_000L, 61_000L, 91_000L, 121_000L, 151_000L),
+            client.attemptTimes)
+        assertEquals(0, client.active)
+        assertTrue(client.maxActive <= 1)
+        assertEquals(1_000L, MapViewModel.locationRetryDelayMs(1))
+        assertEquals(30_000L, MapViewModel.locationRetryDelayMs(Int.MAX_VALUE))
+    }
+
+    @Test fun `late failure clears the position and resubscribes after the reset initial delay`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply {
+            scripts += failAtStart()
+            scripts += failAtStart()
+            scripts += { emit(fix); kotlinx.coroutines.delay(60_000); throw gpsOff }
+            scripts += emitThenHang()
+        }
+        val model = trackingViewModel(client)
+        advanceTimeBy(3_000); runCurrent()
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+        advanceTimeBy(60_000); runCurrent()
+        assertNull(model.uiState.value.currentPosition)
+        // A delivered update reset the backoff (it would otherwise be 4 s), and the auto-center request made on the
+        // first update did not wake the retry early.
+        advanceTimeBy(999); runCurrent()
+        assertEquals(3, client.attemptTimes.size)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(listOf(0L, 1_000L, 3_000L, 64_000L), client.attemptTimes)
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+    }
+
+    @Test fun `backoff does not reset for a subscription that fails without delivering a fix`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply {
+            scripts += failAtStart()
+            scripts += { kotlinx.coroutines.delay(60_000); throw IllegalStateException("registration failed") }
+        }
+        trackingViewModel(client)
+        advanceTimeBy(61_000); runCurrent()
+        assertEquals(listOf(0L, 1_000L), client.attemptTimes)
+        advanceTimeBy(1_999); runCurrent()
+        assertEquals(2, client.attemptTimes.size)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(listOf(0L, 1_000L, 63_000L), client.attemptTimes)
+    }
+
+    @Test fun `normal completion keeps the last position and resubscribes`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { scripts += { emit(fix) }; scripts += emitThenHang() }
+        val model = trackingViewModel(client)
+        runCurrent()
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+        assertEquals(0, client.active)
+        advanceTimeBy(1_000); runCurrent()
+        assertEquals(listOf(0L, 1_000L), client.attemptTimes)
+        assertEquals(1, client.active)
+        verify { android.util.Log.i(MapViewModel.LOCATION_LOG_TAG, "subscription failed: flow completed; retry #1 in 1000 ms") }
+    }
+
+    @Test fun `an open subscription without fixes is never treated as failed`() = runTest {
+        val client = ScriptedLocationClient(testScheduler)
+        val model = trackingViewModel(client)
+        advanceTimeBy(3_600_000); runCurrent()
+        assertEquals(listOf(0L), client.attemptTimes)
+        assertEquals(1, client.active)
+        assertNull(model.uiState.value.currentPosition)
+    }
+
+    @Test fun `repeated startTracking and recenter never add a subscription`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { scripts += emitThenHang() }
+        val model = trackingViewModel(client)
+        runCurrent()
+        repeat(5) { model.startTracking(); model.centerOnPosition(); runCurrent() }
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(listOf(0L), client.attemptTimes)
+        assertEquals(1, client.maxActive)
+    }
+
+    @Test fun `recenter during a backoff wait retries once immediately`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply {
+            repeat(6) { scripts += failAtStart() }
+            scripts += emitThenHang()
+        }
+        val model = trackingViewModel(client)
+        advanceTimeBy(31_000); runCurrent()
+        assertEquals(6, client.attemptTimes.size) // now waiting 30 s
+        advanceTimeBy(5_000)
+        repeat(3) { model.centerOnPosition() }
+        runCurrent()
+        assertEquals(36_000L, client.attemptTimes.last())
+        assertEquals(7, client.attemptTimes.size)
+        assertEquals(fix.point, model.uiState.value.currentPosition)
+        assertEquals(1, client.maxActive)
+    }
+
+    @Test fun `clearing the ViewModel cancels the active collection`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { scripts += emitThenHang() }
+        trackingViewModel(client)
+        runCurrent()
+        assertEquals(1, client.active)
+        store.clear()
+        runCurrent()
+        assertEquals(0, client.active)
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(listOf(0L), client.attemptTimes)
+    }
+
+    @Test fun `clearing the ViewModel cancels a pending retry and all later attempts`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply { repeat(10) { scripts += failAtStart() } }
+        trackingViewModel(client)
+        advanceTimeBy(1_500); runCurrent()
+        assertEquals(listOf(0L, 1_000L), client.attemptTimes)
+        store.clear()
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(listOf(0L, 1_000L), client.attemptTimes)
+    }
+
+    @Test fun `CancellationException from the subscription is not retried`() = runTest {
+        val client = ScriptedLocationClient(testScheduler).apply {
+            scripts += { throw kotlinx.coroutines.CancellationException("cancelled upstream") }
+        }
+        trackingViewModel(client)
+        advanceTimeBy(600_000); runCurrent()
+        assertEquals(listOf(0L), client.attemptTimes)
+        verify(exactly = 0) { android.util.Log.i(MapViewModel.LOCATION_LOG_TAG, match { it.startsWith("subscription failed") }) }
     }
 
 }
