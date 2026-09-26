@@ -1,6 +1,7 @@
 package pl.mazovia.offroad.navigation
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -12,10 +13,19 @@ import pl.mazovia.offroad.domain.navigation.OffRouteState
 import pl.mazovia.offroad.domain.routing.RoutingEngine
 import pl.mazovia.offroad.domain.routing.RoutingResult
 
-class NavigationManager(
+class NavigationManager internal constructor(
     private val routingEngine: RoutingEngine,
-    private val locationClient: LocationClient? = null
+    private val locationClient: LocationClient?,
+    private val scope: CoroutineScope,
+    private val logLocation: (String) -> Unit
 ) {
+    constructor(routingEngine: RoutingEngine, locationClient: LocationClient? = null) : this(
+        routingEngine,
+        locationClient,
+        CoroutineScope(Dispatchers.Default),
+        { message -> android.util.Log.i(LOCATION_LOG_TAG, message) }
+    )
+
     private val _navigationState = MutableStateFlow(NavigationState(status = NavigationStatus.IDLE))
     val navigationState: StateFlow<NavigationState> = _navigationState.asStateFlow()
 
@@ -30,20 +40,59 @@ class NavigationManager(
     private var maneuverIndices: List<Int> = emptyList()
 
     private var locationJob: Job? = null
-    private val scope = CoroutineScope(Dispatchers.Default)
+    // Wakes a pending location retry early; conflated so repeated navigation events never queue retries.
+    private val locationRetrySignal = Channel<Unit>(Channel.CONFLATED)
     private var lastAcceptedPosition: GeoPoint? = null
     private var lastAcceptedBearing: Double? = null
 
     init {
-        locationJob = scope.launch {
-            try {
-                locationClient?.getLocationUpdates(1000L)?.collect { update ->
+        if (locationClient != null) {
+            locationJob = scope.launch { collectLocationWithRecovery(locationClient) }
+        }
+    }
+
+    /**
+     * Single long-lived location subscription. A failed or completed subscription is retried with a capped
+     * backoff for the whole lifetime of [scope]; there is no exhaustion state. Cancellation of [scope] stops the
+     * active collection, the pending delay and all later attempts. Logs never contain coordinates.
+     */
+    private suspend fun collectLocationWithRecovery(client: LocationClient) {
+        var consecutiveFailures = 0
+        while (true) {
+            logLocation("subscription attempt (consecutive failures: $consecutiveFailures)")
+            // Wake-ups are stale once an attempt starts or an update arrives; one still pending when this attempt
+            // fails was sent after the last good update and must wake the retry, so nothing is drained after failure.
+            locationRetrySignal.tryReceive()
+            var receivedUpdate = false
+            val failure = try {
+                client.getLocationUpdates(LOCATION_INTERVAL_MS).collect { update ->
+                    locationRetrySignal.tryReceive()
+                    if (!receivedUpdate) {
+                        receivedUpdate = true
+                        if (consecutiveFailures > 0) {
+                            logLocation("subscription recovered after $consecutiveFailures failures")
+                        }
+                        consecutiveFailures = 0
+                    }
                     updatePosition(update.point, update.bearing?.toDouble(), update.speedMps?.toDouble())
                 }
+                "flow completed"
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
-                // Ignore for now
+                e::class.java.simpleName
+            }
+            consecutiveFailures++
+            val delayMs = locationRetryDelayMs(consecutiveFailures)
+            logLocation("subscription failed: $failure; retry #$consecutiveFailures in $delayMs ms")
+            if (withTimeoutOrNull(delayMs) { locationRetrySignal.receive() } != null) {
+                logLocation("retry woken early by navigation event")
             }
         }
+    }
+
+    private fun wakeLocationRetry() {
+        locationRetrySignal.trySend(Unit)
     }
 
     private fun initializeRouteData(route: Route, startSegmentIdx: Int) {
@@ -77,6 +126,7 @@ class NavigationManager(
     }
 
     fun startNavigation(route: Route) {
+        wakeLocationRetry()
         if (route.source == RouteSource.IMPORTED_GPX) {
             startGpxFollowing(requireNotNull(route.originalGpx), route)
             return
@@ -93,6 +143,7 @@ class NavigationManager(
     }
 
     fun startGpxFollowing(gpxData: GpxData, route: Route?) {
+        wakeLocationRetry()
         val gpxRoute = route?.takeIf { it.source == RouteSource.IMPORTED_GPX && it.originalGpx == gpxData }
             ?: GpxRoute.create(gpxData)
         initializeRouteData(gpxRoute, 0)
@@ -109,6 +160,7 @@ class NavigationManager(
     }
 
     fun restoreSession(route: Route, segmentIndex: Int) {
+        wakeLocationRetry()
         if (route.source == RouteSource.IMPORTED_GPX) {
             startNavigation(route)
             _navigationState.value = _navigationState.value.copy(isRecovered = true)
@@ -320,5 +372,17 @@ class NavigationManager(
             }
         }
         return nearestIdx
+    }
+
+    internal companion object {
+        const val LOCATION_INTERVAL_MS = 1_000L
+        const val LOCATION_RETRY_INITIAL_DELAY_MS = 1_000L
+        const val LOCATION_RETRY_MAX_DELAY_MS = 30_000L
+        const val LOCATION_LOG_TAG = "NavLocation"
+
+        /** 1 s, 2 s, 4 s, 8 s, 16 s, then 30 s for every later consecutive failure. */
+        fun locationRetryDelayMs(consecutiveFailures: Int): Long =
+            (LOCATION_RETRY_INITIAL_DELAY_MS shl (consecutiveFailures - 1).coerceIn(0, 5))
+                .coerceAtMost(LOCATION_RETRY_MAX_DELAY_MS)
     }
 }

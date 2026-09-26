@@ -62,7 +62,10 @@ class AndroidLocationClient(
             request,
             locationCallback,
             Looper.getMainLooper()
-        )
+        ).addOnFailureListener { error ->
+            // An asynchronous registration failure would otherwise leave this flow open and silent forever.
+            close(error)
+        }
 
         awaitClose {
             client.removeLocationUpdates(locationCallback)
