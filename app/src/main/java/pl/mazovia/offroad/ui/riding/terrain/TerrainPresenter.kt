@@ -5,6 +5,7 @@ import pl.mazovia.offroad.domain.model.NavigationStatus
 import pl.mazovia.offroad.terrain.presentation.TerrainPresentationState
 import pl.mazovia.offroad.terrain.profile.GradeEvent
 import pl.mazovia.offroad.terrain.profile.GradeProfile
+import pl.mazovia.offroad.terrain.profile.DisplayElevationProfile
 import pl.mazovia.offroad.terrain.projection.ProjectionMode
 import pl.mazovia.offroad.terrain.projection.TerrainRouteProjection
 import kotlin.math.abs
@@ -38,7 +39,8 @@ data class TerrainDisplayState(
     val showStaleIndicator: Boolean,
     val needsAnimation: Boolean,
     /** Schedule a one-shot clock callback for stale transitions even when animation has settled. */
-    val nextTimedUpdateNanos: Long?
+    val nextTimedUpdateNanos: Long?,
+    val profile: DisplayElevationProfile? = null
 )
 
 /** View-scoped, single-threaded presenter. Call [onNavigationState] on emissions and [frame] only while needed. */
@@ -47,6 +49,7 @@ class TerrainPresenter(
     private val grade: GradeProfile? = null,
     private val events: List<GradeEvent> = emptyList()
 ) {
+    private val displayProfile = grade?.filtered?.let(DisplayElevationProfile::from)
     private var routeId: String? = null
     private var target: TerrainPresentationState? = null
     private var displayS: Double? = null
@@ -228,6 +231,6 @@ class TerrainPresenter(
         return TerrainDisplayState(target, mode, s,
             s?.minus(TerrainMotionTargets.BEHIND_M), s?.plus(TerrainMotionTargets.AHEAD_M),
             distanceToRouteM, stale,
-            stale && age >= TerrainMotionTargets.INDICATOR_SECONDS, animate, nextTimed)
+            stale && age >= TerrainMotionTargets.INDICATOR_SECONDS, animate, nextTimed, displayProfile)
     }
 }

@@ -28,6 +28,9 @@ import pl.mazovia.offroad.state.AppModeManager
 import pl.mazovia.offroad.state.MapEngine
 import pl.mazovia.offroad.ui.map.components.MapLibreViewContainer
 import pl.mazovia.offroad.ui.map.components.MapViewContainer
+import pl.mazovia.offroad.ui.riding.terrain.RidingViewMode
+import pl.mazovia.offroad.ui.riding.terrain.RidingMapTerrainBox
+import pl.mazovia.offroad.ui.riding.terrain.TerrainPane
 
 /**
  * RIDING MODE - radically simpler UI.
@@ -56,6 +59,8 @@ fun RidingScreen(
 
     var showMore by remember { mutableStateOf(false) }
     var isStopping by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var ridingViewMode by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(RidingViewMode.MAPA) }
+    var terrainFailure by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
 
     // Recovered state notification
     if (navState.isRecovered) {
@@ -102,6 +107,10 @@ fun RidingScreen(
     if (isLandscape) {
         LandscapeRidingLayout(
             navState = navState,
+            ridingViewMode = ridingViewMode,
+            onRidingViewModeChange = { ridingViewMode = it },
+            terrainFailure = terrainFailure,
+            onTerrainFailure = { terrainFailure = it; ridingViewMode = RidingViewMode.MAPA },
             recordingSession = recordingSession,
             onMore = { showMore = true },
             onReturnToGpx = navigationManager::guideBackToGpx,
@@ -111,6 +120,10 @@ fun RidingScreen(
     } else {
         PortraitRidingLayout(
             navState = navState,
+            ridingViewMode = ridingViewMode,
+            onRidingViewModeChange = { ridingViewMode = it },
+            terrainFailure = terrainFailure,
+            onTerrainFailure = { terrainFailure = it; ridingViewMode = RidingViewMode.MAPA },
             recordingSession = recordingSession,
             onMore = { showMore = true },
             onReturnToGpx = navigationManager::guideBackToGpx,
@@ -134,6 +147,10 @@ fun RidingScreen(
 @Composable
 private fun PortraitRidingLayout(
     navState: pl.mazovia.offroad.domain.model.NavigationState,
+    ridingViewMode: RidingViewMode,
+    onRidingViewModeChange: (RidingViewMode) -> Unit,
+    terrainFailure: String?,
+    onTerrainFailure: (String) -> Unit,
     recordingSession: pl.mazovia.offroad.data.db.entity.RecordingSessionEntity?,
     onMore: () -> Unit,
     onReturnToGpx: () -> Unit,
@@ -250,7 +267,15 @@ private fun PortraitRidingLayout(
             // POC Opt-in toggle:
             val mapEngine = MapEngine.MAPLIBRE_PMTILES_POC // Default OSMDROID, testing MapLibre for POC
             
-            when (mapEngine) {
+            RidingMapTerrainBox(
+                mode = ridingViewMode,
+                onModeChange = onRidingViewModeChange,
+                terrainAvailable = terrainFailure == null,
+                modifier = Modifier.fillMaxSize(),
+                unavailableReason = terrainFailure,
+                terrain = { TerrainPane(navState, onTerrainFailure, Modifier.fillMaxSize(),
+                    onNoRoute = { onRidingViewModeChange(RidingViewMode.MAPA) }) },
+                map = { when (mapEngine) {
                 MapEngine.MAPLIBRE_PMTILES_POC -> {
                     pl.mazovia.offroad.ui.map.components.MapLibrePMTilesPOCContainer(
                         currentPosition = navState.currentPosition,
@@ -295,9 +320,11 @@ private fun PortraitRidingLayout(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-            }
+            } }
+            )
 
             // Map Controls (Right edge)
+            if (ridingViewMode == RidingViewMode.MAPA) {
             Column(
                 modifier = Modifier
                     .align(Alignment.CenterEnd)
@@ -359,6 +386,7 @@ private fun PortraitRidingLayout(
                     }
                 }
             }
+            }
         }
 
         // BOTTOM 1: Terrain Radar Bar
@@ -413,6 +441,10 @@ private fun PortraitRidingLayout(
 @Composable
 private fun LandscapeRidingLayout(
     navState: pl.mazovia.offroad.domain.model.NavigationState,
+    ridingViewMode: RidingViewMode,
+    onRidingViewModeChange: (RidingViewMode) -> Unit,
+    terrainFailure: String?,
+    onTerrainFailure: (String) -> Unit,
     recordingSession: pl.mazovia.offroad.data.db.entity.RecordingSessionEntity?,
     onMore: () -> Unit,
     onReturnToGpx: () -> Unit,
@@ -492,7 +524,15 @@ private fun LandscapeRidingLayout(
             // POC Opt-in toggle:
             val mapEngine = MapEngine.MAPLIBRE_PMTILES_POC // Default OSMDROID, testing MapLibre for POC
             
-            when (mapEngine) {
+            RidingMapTerrainBox(
+                mode = ridingViewMode,
+                onModeChange = onRidingViewModeChange,
+                terrainAvailable = terrainFailure == null,
+                modifier = Modifier.fillMaxSize(),
+                unavailableReason = terrainFailure,
+                terrain = { TerrainPane(navState, onTerrainFailure, Modifier.fillMaxSize(),
+                    onNoRoute = { onRidingViewModeChange(RidingViewMode.MAPA) }) },
+                map = { when (mapEngine) {
                 MapEngine.MAPLIBRE_PMTILES_POC -> {
                     pl.mazovia.offroad.ui.map.components.MapLibrePMTilesPOCContainer(
                         currentPosition = navState.currentPosition,
@@ -537,9 +577,11 @@ private fun LandscapeRidingLayout(
                         modifier = Modifier.fillMaxSize()
                     )
                 }
-            }
+            } }
+            )
 
             // Recenter Button in Landscape
+            if (ridingViewMode == RidingViewMode.MAPA) {
             androidx.compose.material3.IconButton(
                 onClick = {
                     isFollowMode = true
@@ -564,6 +606,8 @@ private fun LandscapeRidingLayout(
             Column(modifier = Modifier.align(Alignment.CenterEnd).padding(16.dp)) {
                 IconButton(onClick = zoom::zoomIn) { Icon(Icons.Default.Add, "Przybliż", tint = Color.White) }
                 IconButton(onClick = zoom::zoomOut) { Icon(Icons.Default.Remove, "Oddal", tint = Color.White) }
+            }
+
             }
 
             navState.route?.let { route ->
