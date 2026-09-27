@@ -44,7 +44,6 @@ class TerrainInstrumentModelTest {
         val route = Replay.route()
         val attached = presenter.onNavigationState(Replay.state(route, 100.0, 10.0), 0L)
         val valid = terrainInstrumentModel(attached) as TerrainInstrumentModel.Valid
-        assertTrue(valid.samples.any { it.heightM != null })
         assertTrue(valid.gradeLabel.isNotBlank())
         val held = presenter.onNavigationState(
             Replay.state(route, 100.0, 10.0).copy(currentPosition = null), 1_000_000_000L)
@@ -54,8 +53,6 @@ class TerrainInstrumentModelTest {
         val advanced = terrainInstrumentModel(presenter.frame(2_033_000_000L)) as TerrainInstrumentModel.Valid
         val heldModel = terrainInstrumentModel(held) as TerrainInstrumentModel.Valid
         assertTrue(advanced.riderM > heldModel.riderM)
-        assertTrue(advanced.windowStartM > heldModel.windowStartM)
-        assertTrue(advanced.windowEndM > heldModel.windowEndM)
         assertTrue(newer.target!!.projection.distanceAlongM!! > held.target!!.projection.distanceAlongM!!)
         assertSame(attached.profile, newer.profile)
         assertNull(TerrainPresenter().frame(0).profile)
@@ -68,31 +65,26 @@ class TerrainInstrumentModelTest {
         assertTrue(model.showStaleIndicator)
     }
 
-    @Test fun longProfileWindowsIncludeOnlyIndexedSamplesAndPreserveBreaks() {
-        val count = 50_000
-        val breakAt = 25_000
-        val raw = RawElevationProfile.fromHeights("long", List(count) { 100.0 + it * .01 },
-            partIndices = List(count) { when {
-                it == 0 -> 0
-                it <= breakAt -> 1
-                it < count - 1 -> 2
-                else -> 3
-            } })
-        val profile = DisplayElevationProfile.from(FilteredElevationProfile.from(raw))
-        fun window(start: Double, end: Double): TerrainInstrumentModel = terrainInstrumentModel(
-            frame(TerrainVisualMode.ATTACHED, profile).copy(
-                windowStartM = start, windowEndM = end, distanceAlongM = start))
+    @Test fun dataStateFollowsTheCorridorWindowAroundTheRider() {
+        // Elevation only near the start of the route.
+        val partial = DisplayElevationProfile.from(FilteredElevationProfile.from(RawElevationProfile.fromHeights(
+            "partial", List(400) { if (it < 100) 100.0 + it * .1 else null })))
+        fun at(rider: Double) = terrainInstrumentModel(
+            frame(TerrainVisualMode.ATTACHED, partial).copy(distanceAlongM = rider))
+        val last = partial.distanceAt((0 until partial.size).last { partial.relativeHeightAt(it) != null })
+        assertTrue(at(100.0) is TerrainInstrumentModel.Valid)
+        // The last height lies inside [rider - BEHIND_M, rider + AHEAD_M] 15 m past it, not 25 m past it.
+        assertTrue(at(last + 15.0) is TerrainInstrumentModel.Valid)
+        assertTrue(at(last + 25.0) is TerrainInstrumentModel.NoData)
+        assertTrue(at(1_500.0) is TerrainInstrumentModel.NoData)
 
-        val middle = window(124_995.0, 125_010.0) as TerrainInstrumentModel.Valid
-        assertEquals(listOf(124_995.0, 125_000.0, 125_005.0, 125_010.0),
-            middle.samples.map { it.distanceM })
-        assertEquals(listOf(false, true, false, false), middle.samples.map { it.breakAfter })
-        val start = window(-10.0, 10.0) as TerrainInstrumentModel.Valid
-        assertEquals(listOf(0.0, 5.0, 10.0), start.samples.map { it.distanceM })
-        assertEquals(listOf(true, false, false), start.samples.map { it.breakAfter })
-        val end = window(249_985.0, 250_010.0) as TerrainInstrumentModel.Valid
-        assertEquals(listOf(249_985.0, 249_990.0, 249_995.0), end.samples.map { it.distanceM })
-        assertEquals(listOf(false, true, false), end.samples.map { it.breakAfter })
-        assertTrue(window(250_000.0, 251_000.0) is TerrainInstrumentModel.NoData)
+        val long = DisplayElevationProfile.from(FilteredElevationProfile.from(RawElevationProfile.fromHeights(
+            "long", List(50_000) { 100.0 + it * .01 })))
+        fun longAt(rider: Double) = terrainInstrumentModel(
+            frame(TerrainVisualMode.ATTACHED, long).copy(distanceAlongM = rider))
+        assertTrue(longAt(125_000.0) is TerrainInstrumentModel.Valid)
+        assertTrue(longAt(-300.0) is TerrainInstrumentModel.Valid)
+        assertTrue(longAt(250_010.0) is TerrainInstrumentModel.Valid)
+        assertTrue(longAt(250_100.0) is TerrainInstrumentModel.NoData)
     }
 }

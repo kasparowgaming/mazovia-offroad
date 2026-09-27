@@ -1,13 +1,22 @@
 package pl.mazovia.offroad.ui.riding.terrain
 
+import pl.mazovia.offroad.domain.model.GeoPoint
 import pl.mazovia.offroad.domain.model.NavigationState
 import pl.mazovia.offroad.domain.model.NavigationStatus
+import pl.mazovia.offroad.domain.model.Route
+import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
+import pl.mazovia.offroad.terrain.presentation.CorridorRoute
 import pl.mazovia.offroad.terrain.presentation.TerrainPresentationState
 import pl.mazovia.offroad.terrain.profile.GradeEvent
 import pl.mazovia.offroad.terrain.profile.GradeProfile
 import pl.mazovia.offroad.terrain.profile.DisplayElevationProfile
+import pl.mazovia.offroad.terrain.profile.RouteTerrainProfile
+import pl.mazovia.offroad.terrain.projection.EdgeProjection
 import pl.mazovia.offroad.terrain.projection.ProjectionMode
+import pl.mazovia.offroad.terrain.projection.ProjectionResult
+import pl.mazovia.offroad.terrain.projection.RouteIndex
 import pl.mazovia.offroad.terrain.projection.TerrainRouteProjection
+import pl.mazovia.offroad.terrainsource.TerrainProfileRequest
 import kotlin.math.abs
 
 /** DESIGN §15 TARGETS. All distances use the navigation-compatible route axis. */
@@ -40,18 +49,97 @@ data class TerrainDisplayState(
     val needsAnimation: Boolean,
     /** Schedule a one-shot clock callback for stale transitions even when animation has settled. */
     val nextTimedUpdateNanos: Long?,
-    val profile: DisplayElevationProfile? = null
+    val profile: DisplayElevationProfile? = null,
+    /** Grade events of the same profile as [profile] (corridor edge colouring, DESIGN §3.7). */
+    val events: List<GradeEvent> = emptyList()
 )
 
 /** View-scoped, single-threaded presenter. Call [onNavigationState] on emissions and [frame] only while needed. */
 class TerrainPresenter(
     private val projection: TerrainRouteProjection = TerrainRouteProjection(),
-    private val grade: GradeProfile? = null,
-    private val events: List<GradeEvent> = emptyList()
+    grade: GradeProfile? = null,
+    events: List<GradeEvent> = emptyList()
 ) {
-    private val displayProfile = grade?.filtered?.let(DisplayElevationProfile::from)
+    private val fixedGrade = grade
+    private val fixedEvents = events
+    private val fixedDisplay = grade?.filtered?.let(DisplayElevationProfile::from)
+    /** Runtime profile (TA-007); used only while its routeId equals the projected route, so a reroute never shows it. */
+    private var loaded: RouteTerrainProfile? = null
+    private var loadedDisplay: DisplayElevationProfile? = null
+    private val current: RouteTerrainProfile? get() = loaded?.takeIf { it.routeId == routeId }
+    private val grade: GradeProfile? get() = current?.grade ?: fixedGrade
+    private val events: List<GradeEvent> get() = current?.events ?: fixedEvents
+    private val displayProfile: DisplayElevationProfile? get() = if (current != null) loadedDisplay else fixedDisplay
     private var routeId: String? = null
+    /** Route of the latest emission; the corridor reads its segments and maneuvers (DESIGN §3.7). */
+    private var route: Route? = null
+    private val activeIndex: RouteIndex? get() = projection.index?.takeIf { it.routeId == routeId }
+    private var request: TerrainProfileRequest? = null
+
+    /** Profile work for the route the presenter currently projects onto; one instance per route. */
+    val profileRequest: TerrainProfileRequest?
+        get() {
+            val index = activeIndex ?: return null
+            return request?.takeIf { it.index === index } ?: TerrainProfileRequest(index).also { request = it }
+        }
+
+    /** Installs [profile] (or clears it with null) and re-derives the current target from the last projection, so
+     *  grade and next-event values follow the new profile without re-feeding a navigation state. Must be called on
+     *  the presenter's single thread. */
+    fun setProfile(profile: RouteTerrainProfile?) {
+        if (profile === loaded) return
+        loaded = profile
+        loadedDisplay = profile?.grade?.filtered?.let(DisplayElevationProfile::from)
+        targetResult?.let { target = TerrainPresentationState.build(it, grade, events) }
+    }
+
+    // Option D corridor (TA-007B): route data once per route, window geometry rebuilt only when the rider leaves the
+    // built window or the route/profile changes (DESIGN §3.7, §17.1).
+    private var corridorRoute: CorridorRoute? = null
+    private var corridor: CorridorGeometry? = null
+    /** A build that produced nothing: not retried until the route, the profile or ≥ REBUILD_M of progress changes. */
+    private var missRouteId: String? = null
+    private var missProfile: DisplayElevationProfile? = null
+    private var missS = Double.NaN
+
+    private fun corridorFits(frame: TerrainDisplayState, s: Double, index: RouteIndex): Boolean {
+        val cached = corridor ?: return false
+        return cached.routeId == index.routeId && cached.display === frame.profile &&
+            cached.covers(s, index.totalLengthM)
+    }
+
+    /** True when [corridor] answers [frame] without building (cheap; the caller may stay on the main thread). */
+    fun corridorIsCurrent(frame: TerrainDisplayState): Boolean {
+        val s = frame.distanceAlongM ?: return true
+        val index = activeIndex ?: return true
+        if (corridorFits(frame, s, index)) return true
+        return missRouteId == index.routeId && missProfile === frame.profile &&
+            abs(s - missS) <= CorridorGeometry.REBUILD_M
+    }
+
+    /**
+     * Option D window geometry for [frame] (DESIGN §3.7): the cached one while it covers the rider, otherwise a new
+     * build (milliseconds: call off the main thread when [corridorIsCurrent] is false). Null without a route position.
+     */
+    fun corridor(frame: TerrainDisplayState): CorridorGeometry? {
+        val s = frame.distanceAlongM ?: return null
+        val index = activeIndex ?: return null
+        if (corridorFits(frame, s, index)) return corridor
+        if (corridorIsCurrent(frame)) return null
+        val data = corridorRoute?.takeIf { it.routeId == index.routeId }
+            ?: route?.takeIf { it.id == index.routeId }?.let { CorridorRoute.build(it, index) }
+        corridorRoute = data
+        val built = data?.let { CorridorGeometry.build(it, frame.profile, frame.events, s) }
+        corridor = built
+        missRouteId = if (built == null) index.routeId else null
+        missProfile = frame.profile
+        missS = s
+        return built
+    }
+
     private var target: TerrainPresentationState? = null
+    /** Projection the current [target] was built from; [setProfile] rebuilds the target from it. */
+    private var targetResult: ProjectionResult? = null
     private var displayS: Double? = null
     /** Last ACCEPTED (ATTACHED) route-progress target; projection HOLD never replaces it. */
     private var targetS: Double? = null
@@ -74,6 +162,9 @@ class TerrainPresenter(
     private var routeEndM = 0.0
     private var mode = TerrainVisualMode.IDLE
     private var distanceToRouteM: Double? = null
+    /** OFF_ROUTE before any attachment (e.g. TEREN opened while already off route): the route point nearest the
+     *  rider, so the greyed corridor still shows where the route is. Never a motion target. */
+    private var offRouteAnchorS: Double? = null
 
     fun onNavigationState(state: NavigationState, nowNanos: Long): TerrainDisplayState {
         require(nowNanos >= 0 && (lastFrameNanos == null || nowNanos >= lastFrameNanos!!))
@@ -91,6 +182,7 @@ class TerrainPresenter(
             detachedSinceAccepted = false
             reattaching = false
         }
+        route = state.route
         lastEmissionNanos = nowNanos
         lastFrameNanos = nowNanos
         routeEndM = projection.index?.totalLengthM ?: 0.0
@@ -109,6 +201,7 @@ class TerrainPresenter(
                 mode = ProjectionMode.HOLD, distanceAlongM = routeEndM, edgeIndex = null, edgeFraction = null,
                 projected = null, tangentBearingDeg = null, crossTrackM = 0.0)
             target = TerrainPresentationState.build(atEnd, grade, events)
+            targetResult = atEnd
             distanceToRouteM = null
             targetS = routeEndM
             displayS = routeEndM
@@ -121,8 +214,12 @@ class TerrainPresenter(
             return snapshot(nowNanos)
         }
         target = TerrainPresentationState.build(result, grade, events)
+        targetResult = result
+        val nearest = if (mode == TerrainVisualMode.OFF_ROUTE && result.distanceAlongM == null && displayS == null)
+            state.currentPosition?.let { position -> projection.index?.let { nearestPoint(it, position) } } else null
+        offRouteAnchorS = nearest?.distanceAlongM
         distanceToRouteM = if (mode == TerrainVisualMode.OFF_ROUTE)
-            state.distanceToGpxMeters ?: result.crossTrackM else null
+            state.distanceToGpxMeters ?: result.crossTrackM ?: nearest?.crossTrackM else null
         if (mode == TerrainVisualMode.OFF_ROUTE) {
             detachedSinceAccepted = true
             reattaching = false
@@ -163,6 +260,11 @@ class TerrainPresenter(
         }
         return snapshot(nowNanos)
     }
+
+    /** Nearest route point to [position] over the whole route (linear scan; only while detached and never attached). */
+    private fun nearestPoint(index: RouteIndex, position: GeoPoint): EdgeProjection? =
+        index.edges.filter { it.haversineLengthM > 0.0 }.map { index.project(it, position) }
+            .minWithOrNull(compareBy({ it.crossTrackM }, { it.distanceAlongM }))
 
     /** Prediction speed: the accepted target's speed, zeroed while the latest emission reports standstill (§15.4). */
     private val predictionSpeed: Double get() = if (speed > 0.0) targetSpeed else 0.0
@@ -213,7 +315,7 @@ class TerrainPresenter(
         val age = lastEmissionNanos?.let { (nowNanos - it) / 1e9 } ?: 0.0
         val active = mode == TerrainVisualMode.ATTACHED || mode == TerrainVisualMode.HOLD
         val stale = active && speed > 0.0 && age >= TerrainMotionTargets.POSITION_STALE_SECONDS
-        val s = displayS
+        val s = displayS ?: offRouteAnchorS.takeIf { mode == TerrainVisualMode.OFF_ROUTE }
         val fixAge = targetAge(nowNanos)
         val predicting = s != null && fixAge != null && active && predictionSpeed > 0.0
         val moving = predicting && abs(reachable(s!!, predictedTarget(fixAge!!)!!) - s) > 1e-6
@@ -231,6 +333,7 @@ class TerrainPresenter(
         return TerrainDisplayState(target, mode, s,
             s?.minus(TerrainMotionTargets.BEHIND_M), s?.plus(TerrainMotionTargets.AHEAD_M),
             distanceToRouteM, stale,
-            stale && age >= TerrainMotionTargets.INDICATOR_SECONDS, animate, nextTimed, displayProfile)
+            stale && age >= TerrainMotionTargets.INDICATOR_SECONDS, animate, nextTimed, displayProfile,
+            if (displayProfile != null) events else emptyList())
     }
 }

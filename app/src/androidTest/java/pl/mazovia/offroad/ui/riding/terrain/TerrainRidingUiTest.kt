@@ -115,9 +115,9 @@ class TerrainRidingUiTest {
         val grade = GradeProfile.from(FilteredElevationProfile.from(
             RawElevationProfile.fromHeights("fixture", (0..200).map { 100.0 + it * .2 })), emptyList())
         val presenter = TerrainPresenter(grade = grade)
-        val model = terrainInstrumentModel(presenter.onNavigationState(
-            Replay.state(Replay.route(), 100.0, 0.0), 1L))
-        rule.setContent { RoadAheadInstrument(model, Modifier.fillMaxSize()) }
+        val frame = presenter.onNavigationState(Replay.state(Replay.route(), 100.0, 0.0), 1L)
+        val model = terrainInstrumentModel(frame, presenter.corridor(frame))
+        rule.setContent { RoadAheadCorridor(model, Modifier.fillMaxSize()) }
         rule.onNodeWithContentDescription("Teren: dane").assertExists()
         rule.onNodeWithTag("terrain_distance").assertExists()
         rule.onNodeWithTag("terrain_slope").assertExists()

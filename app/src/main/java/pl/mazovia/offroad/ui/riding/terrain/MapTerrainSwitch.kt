@@ -25,6 +25,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChangedBy
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import android.util.Log
+import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
+import pl.mazovia.offroad.terrain.profile.RouteTerrainProfile
+import pl.mazovia.offroad.terrainsource.TerrainProfileSession
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -54,7 +61,11 @@ fun RidingMapTerrainBox(
                 awaitPointerEventScope {
                     while (true) awaitPointerEvent().changes.forEach { it.consume() }
                 }
-            }) { terrain() }
+            }) {
+                // The MAPA/TEREN switch floats over the top: the instrument starts below it.
+                val switchBottomDp = with(LocalDensity.current) { switchBottom.toDp() }
+                Box(Modifier.fillMaxSize().padding(top = switchBottomDp)) { terrain() }
+            }
         }
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)
@@ -94,6 +105,19 @@ fun TerrainPane(
 ) {
     val presenterResult = remember { runCatching { TerrainPresenter() } }
     val presenter = presenterResult.getOrNull()
+    val context = LocalContext.current.applicationContext
+    val session = remember { TerrainProfileSession(context) }
+    DisposableEffect(session) { onDispose { session.close() } }
+    // TA-007: the presenter names the route it projects onto → profile built off the main thread → installed by the
+    // collector below. This adapter only passes the request along; route progress stays in the presenter.
+    var request by remember { mutableStateOf(presenter?.profileRequest) }
+    var profile by remember { mutableStateOf<RouteTerrainProfile?>(null) }
+    LaunchedEffect(session) {
+        snapshotFlow { request }.distinctUntilChangedBy { it?.routeId }.collectLatest { next ->
+            profile = null
+            profile = next?.let { session.build(it) }
+        }
+    }
     val currentState by rememberUpdatedState(state)
     val currentOnNoRoute by rememberUpdatedState(onNoRoute)
     var model by remember { mutableStateOf<TerrainInstrumentModel>(TerrainInstrumentModel.NoRoute) }
@@ -101,12 +125,31 @@ fun TerrainPane(
         if (presenter == null) { onFailure("Teren niedostępny"); return@LaunchedEffect }
         var lastNanos = 0L
         fun now(): Long = max(System.nanoTime(), lastNanos).also { lastNanos = it }
+        // TA-007B corridor: the presenter keeps the window geometry and rebuilds it only when the rider leaves the
+        // built window (≈ every 30 m) or the route/profile changes; a rebuild runs off the main thread (DESIGN §17.1).
+        suspend fun corridorFor(frame: TerrainDisplayState): CorridorGeometry? =
+            if (presenter.corridorIsCurrent(frame)) presenter.corridor(frame)
+            else withContext(Dispatchers.Default) {
+                val started = System.nanoTime()
+                presenter.corridor(frame).also {
+                    Log.d("TerrainCorridor", "window ${it?.size} samples at s=%.0f in %.2f ms".format(
+                        frame.distanceAlongM, (System.nanoTime() - started) / 1e6))
+                }
+            }
+        // The emission already fed to the presenter: a profile arriving later only re-derives the frame (no
+        // duplicate emission, which would refresh the freshness clock).
+        var fed: NavigationState? = null
         try {
-            snapshotFlow { currentState }.collectLatest { incoming ->
+            snapshotFlow { currentState to profile }.collectLatest { (incoming, loaded) ->
                 // Projection (and the route index build on a new route) runs off the main thread (DESIGN §17.1);
                 // calls stay sequential within this coroutine, so the presenter remains single-threaded.
-                var current = withContext(Dispatchers.Default) { presenter.onNavigationState(incoming, now()) }
-                model = terrainInstrumentModel(current)
+                var current = withContext(Dispatchers.Default) {
+                    presenter.setProfile(loaded)
+                    if (incoming === fed) presenter.frame(now())
+                    else presenter.onNavigationState(incoming, now()).also { fed = incoming }
+                }
+                request = presenter.profileRequest
+                model = terrainInstrumentModel(current, corridorFor(current))
                 if (current.mode == TerrainVisualMode.IDLE) { currentOnNoRoute(); return@collectLatest }
                 while (true) {
                     if (current.needsAnimation) {
@@ -116,14 +159,15 @@ fun TerrainPane(
                         delay(max(1L, (due - now()) / 1_000_000L))
                     }
                     current = presenter.frame(now())
-                    model = terrainInstrumentModel(current)
+                    model = terrainInstrumentModel(current, corridorFor(current))
                 }
             }
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
+            Log.w("TerrainCorridor", "terrain presentation failed", failure)
             onFailure("Teren niedostępny")
         }
     }
-    RoadAheadInstrument(model, modifier)
+    RoadAheadCorridor(model, modifier, onFailure)
 }
