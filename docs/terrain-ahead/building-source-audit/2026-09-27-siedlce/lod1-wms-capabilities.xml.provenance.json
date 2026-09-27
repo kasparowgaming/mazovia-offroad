@@ -1,0 +1,9 @@
+{
+  "url": "https://mapy.geoportal.gov.pl/wss/service/PZGIK/FOTO/WMS/ModeleBudynkow3D?service=WMS&version=1.1.1&request=GetCapabilities",
+  "request_body": null,
+  "retrieved_at": "2026-09-27T21:26:26.547844+00:00",
+  "status": 200,
+  "content_type": "application/vnd.ogc.wms_xml; charset=UTF-8",
+  "bytes": 13168,
+  "sha256": "544347bda5ae8c61e84ad396747a19c12f7ea1c2800f93e735f07765175a9719"
+}

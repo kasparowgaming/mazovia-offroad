@@ -1,0 +1,9 @@
+{
+  "url": "https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/WFS/UslugaZbiorcza?service=WFS&version=2.0.0&request=GetFeature&typenames=ms%3Abudynki&srsName=urn%3Aogc%3Adef%3Acrs%3AEPSG%3A%3A3857&bbox=2480318.1435945765%2C6829978.90112817%2C2483083.9514216073%2C6833208.843211165%2Curn%3Aogc%3Adef%3Acrs%3AEPSG%3A%3A3857&count=10000",
+  "request_body": null,
+  "retrieved_at": "2026-09-27T21:26:26.547844+00:00",
+  "status": 200,
+  "content_type": "text/xml; subtype=\"gml/3.2.1\"; charset=UTF-8",
+  "bytes": 1081268,
+  "sha256": "4f32cf277fef43dbe3a694e952ecaa175e3fecc4e5416a3125c293bc58572360"
+}

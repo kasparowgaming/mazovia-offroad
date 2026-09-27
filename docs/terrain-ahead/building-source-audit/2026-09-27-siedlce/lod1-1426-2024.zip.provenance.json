@@ -1,0 +1,9 @@
+{
+  "url": "https://opendata.geoportal.gov.pl/InneDane/Budynki3D/LOD1/2024/14/1426.zip",
+  "request_body": null,
+  "retrieved_at": "2026-09-27T21:30:53.322424+00:00",
+  "status": 200,
+  "content_type": "application/octet-stream",
+  "bytes": 16093493,
+  "sha256": "98797fedac7fa35c413ad90831ef3261d177ec308be7a0b955b9e34d7ec13700"
+}

@@ -1,0 +1,38 @@
+{
+  "passed": true,
+  "sources": [
+    "osm",
+    "egib",
+    "lod1"
+  ],
+  "sha256_verified_files": [
+    "egib-capabilities.txt",
+    "egib-city-capabilities.xml",
+    "egib-city.gml",
+    "egib.gml",
+    "lod1-1426-2024.zip",
+    "lod1-1464-2024.zip",
+    "lod1-info-county.html",
+    "lod1-info-end.html",
+    "lod1-info-start.html",
+    "lod1-info.txt",
+    "lod1-wms-capabilities.xml",
+    "osm.json",
+    "services-page.txt",
+    "wms-page.txt"
+  ],
+  "checks": [
+    "counts, unique IDs, all geometries valid and intersect corridor in EPSG:2180",
+    "positive known heights; unknown remains null",
+    "gzip roundtrip and byte sizes",
+    "no OSM usernames or account IDs in normalized artifacts",
+    "original GPX remains two segments",
+    "raw source SHA-256 checks"
+  ],
+  "not_verified": [
+    "field truth",
+    "full national coverage",
+    "phone FPS, memory or battery",
+    "production PMTiles contents"
+  ]
+}

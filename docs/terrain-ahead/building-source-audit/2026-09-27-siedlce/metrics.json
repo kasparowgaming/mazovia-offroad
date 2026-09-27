@@ -1,0 +1,102 @@
+{
+  "area": {
+    "source": "test_mazovia.gpx",
+    "kind": "synthetic test GPX, not a verified navigable route",
+    "length_m": 1863.1762488468953,
+    "half_width_m": 200,
+    "area_m2": 952229.1180679447
+  },
+  "sources": {
+    "osm": {
+      "buildings": 530,
+      "with_height": 2,
+      "with_levels": 371,
+      "footprint_area_m2": 116325.3,
+      "geojson_bytes": 251697,
+      "gzip_bytes": 39069,
+      "source_years": {},
+      "footprint_versions": {},
+      "source_services": {},
+      "edit_dates_range": [
+        "2011-02-03T16:57:24Z",
+        "2026-09-22T21:48:20Z"
+      ]
+    },
+    "egib": {
+      "buildings": 464,
+      "with_height": 0,
+      "with_levels": 0,
+      "footprint_area_m2": 112044.3,
+      "geojson_bytes": 242788,
+      "gzip_bytes": 56998,
+      "source_years": {},
+      "footprint_versions": {},
+      "source_services": {
+        "egib.gml": 79,
+        "egib-city.gml": 385
+      },
+      "edit_dates_range": [
+        null,
+        null
+      ]
+    },
+    "lod1": {
+      "buildings": 371,
+      "with_height": 371,
+      "with_levels": 0,
+      "footprint_area_m2": 107240.5,
+      "geojson_bytes": 257276,
+      "gzip_bytes": 57076,
+      "source_years": {
+        "2023": 371
+      },
+      "footprint_versions": {
+        "2022-10-27T00:00:00": 13,
+        "2021-11-15T00:00:00": 326,
+        "2019-07-02T00:00:00": 6,
+        "2018-12-12T00:00:00": 26
+      },
+      "source_services": {},
+      "edit_dates_range": [
+        null,
+        null
+      ],
+      "height_solid_delta_max_m": 0.005000000000000782
+    }
+  },
+  "comparisons": {
+    "osm_vs_egib": {
+      "matched_iou_ge_0_5": 426,
+      "unmatched_a": 104,
+      "unmatched_b": 38,
+      "any_overlap_a": 450,
+      "any_overlap_b": 433,
+      "median_iou": 0.997,
+      "centroid_distance_m_p50": 0.009,
+      "centroid_distance_m_p95": 0.267
+    },
+    "lod1_vs_egib": {
+      "matched_iou_ge_0_5": 341,
+      "unmatched_a": 30,
+      "unmatched_b": 123,
+      "any_overlap_a": 360,
+      "any_overlap_b": 396,
+      "median_iou": 0.999,
+      "centroid_distance_m_p50": 0.003,
+      "centroid_distance_m_p95": 1.504
+    },
+    "osm_vs_lod1": {
+      "matched_iou_ge_0_5": 346,
+      "unmatched_a": 184,
+      "unmatched_b": 25,
+      "any_overlap_a": 418,
+      "any_overlap_b": 369,
+      "median_iou": 0.995,
+      "centroid_distance_m_p50": 0.018,
+      "centroid_distance_m_p95": 1.823
+    }
+  },
+  "qa": {
+    "egib_duplicate_ids": 866
+  }
+}

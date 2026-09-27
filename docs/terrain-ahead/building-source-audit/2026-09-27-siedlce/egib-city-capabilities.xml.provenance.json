@@ -1,0 +1,9 @@
+{
+  "url": "https://siedlce.geoportal2.pl/map/geoportal/wfse.php?service=WFS&request=GetCapabilities",
+  "request_body": null,
+  "retrieved_at": "2026-09-27T21:28:50.693921+00:00",
+  "status": 200,
+  "content_type": "text/xml",
+  "bytes": 4757,
+  "sha256": "2894c8d73306c424630b76a75260a566781bf90cb365cfb69e1a934a6cad8eec"
+}

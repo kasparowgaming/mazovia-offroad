@@ -1,0 +1,12 @@
+# Download cache; provenance and normalized audit outputs remain trackable.
+osm.json
+egib.gml
+egib-city.gml
+*.zip
+*-capabilities.xml
+egib-capabilities.txt
+lod1-info*.html
+lod1-info.txt
+services-data.js
+services-page.txt
+wms-page.txt

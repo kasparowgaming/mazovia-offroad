@@ -1,0 +1,9 @@
+{
+  "url": "https://mapy.geoportal.gov.pl/wss/service/PZGIK/FOTO/WMS/ModeleBudynkow3D?service=WMS&version=1.1.1&request=GetFeatureInfo&layers=Modele_3D_budynkow_LoD1_2024%2CModele_3D_budynkow_LoD1_2022&query_layers=Modele_3D_budynkow_LoD1_2024%2CModele_3D_budynkow_LoD1_2022&styles=&srs=EPSG%3A4326&bbox=22.301000000000002%2C52.178799999999995%2C22.305%2C52.1828&width=101&height=101&x=50&y=50&format=image%2Fpng&info_format=text%2Fhtml&feature_count=10",
+  "request_body": null,
+  "retrieved_at": "2026-09-27T21:26:56.842466+00:00",
+  "status": 200,
+  "content_type": "text/html",
+  "bytes": 4350,
+  "sha256": "d71af427b5752ac6911ff0465d6197716cb708d8688885562d1babdd199580e8"
+}

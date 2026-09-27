@@ -1,0 +1,9 @@
+{
+  "url": "https://overpass-api.de/api/interpreter",
+  "request_body": "data=%5Bout%3Ajson%5D%5Btimeout%3A50%5D%3B%28way%5B%22building%22%5D%2852.16480256925134%2C22.28107697869966%2C52.18259662796079%2C22.305922653139252%29%3Brelation%5B%22building%22%5D%5B%22type%22%3D%22multipolygon%22%5D%2852.16480256925134%2C22.28107697869966%2C52.18259662796079%2C22.305922653139252%29%3B%29%3Bout+meta+geom%3B",
+  "retrieved_at": "2026-09-27T21:26:26.546844+00:00",
+  "status": 200,
+  "content_type": "application/json",
+  "bytes": 4231854,
+  "sha256": "1ef9df9777220c37031e335b038a2d1fcc8c6c4e51511fb02ddaa02ee798c63d"
+}

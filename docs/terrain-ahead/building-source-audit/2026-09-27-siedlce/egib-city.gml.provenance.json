@@ -1,0 +1,9 @@
+{
+  "url": "https://siedlce.geoportal2.pl/map/geoportal/wfse.php?service=WFS&version=2.0.0&request=GetFeature&typenames=ewns%3Abudynki&srsName=urn%3Aogc%3Adef%3Acrs%3AEPSG%3A%3A3857&bbox=2480318.1435945765%2C6829978.90112817%2C2483083.9514216073%2C6833208.843211165%2Curn%3Aogc%3Adef%3Acrs%3AEPSG%3A%3A3857&count=10000",
+  "request_body": null,
+  "retrieved_at": "2026-09-27T21:29:01.794355+00:00",
+  "status": 200,
+  "content_type": "application/gml+xml; version=3.2; charset=UTF-8",
+  "bytes": 3477474,
+  "sha256": "b6378b1b11daab81bbd1b4daff935a8011994b0e18b32e7c3ec56f83e733ffc9"
+}

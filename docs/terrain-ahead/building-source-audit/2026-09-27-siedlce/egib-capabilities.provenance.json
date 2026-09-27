@@ -1,0 +1,6 @@
+{
+  "url": "https://mapy.geoportal.gov.pl/wss/service/PZGIK/EGIB/WFS/UslugaZbiorcza?SERVICE=WFS&REQUEST=GetCapabilities&VERSION=2.0.0",
+  "status": 200,
+  "bytes": 17111,
+  "sha256": "6609c18f6e3a268e383a9180037bd8bd8bfcf6ae190cae3be6f87e57a6c3b08c"
+}
