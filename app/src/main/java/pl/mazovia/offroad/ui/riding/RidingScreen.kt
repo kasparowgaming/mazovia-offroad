@@ -160,6 +160,7 @@ private fun PortraitRidingLayout(
     val zoom = remember { pl.mazovia.offroad.ui.map.components.MapZoomState() }
     var centerRequest by remember { mutableLongStateOf(0L) }
     var isFollowMode by remember { mutableStateOf(true) }
+    var mapTopOverlayBottomPx by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(navState.currentPosition) {
         if (centerRequest == 0L && navState.currentPosition != null) {
@@ -273,6 +274,7 @@ private fun PortraitRidingLayout(
                 terrainAvailable = terrainFailure == null,
                 modifier = Modifier.fillMaxSize(),
                 unavailableReason = terrainFailure,
+                onTopOverlayBottomChanged = { mapTopOverlayBottomPx = it },
                 terrain = { TerrainPane(navState, onTerrainFailure, Modifier.fillMaxSize(),
                     onNoRoute = { onRidingViewModeChange(RidingViewMode.MAPA) }) },
                 map = { when (mapEngine) {
@@ -289,6 +291,7 @@ private fun PortraitRidingLayout(
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
                         onUserPan = { isFollowMode = false },
+                        safeTopInsetPx = mapTopOverlayBottomPx,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
@@ -454,6 +457,7 @@ private fun LandscapeRidingLayout(
     val zoom = remember { pl.mazovia.offroad.ui.map.components.MapZoomState() }
     var centerRequest by remember { mutableLongStateOf(0L) }
     var isFollowMode by remember { mutableStateOf(true) }
+    var mapTopOverlayBottomPx by remember { mutableIntStateOf(0) }
 
     LaunchedEffect(navState.currentPosition) {
         if (centerRequest == 0L && navState.currentPosition != null) {
@@ -530,6 +534,7 @@ private fun LandscapeRidingLayout(
                 terrainAvailable = terrainFailure == null,
                 modifier = Modifier.fillMaxSize(),
                 unavailableReason = terrainFailure,
+                onTopOverlayBottomChanged = { mapTopOverlayBottomPx = it },
                 terrain = { TerrainPane(navState, onTerrainFailure, Modifier.fillMaxSize(),
                     onNoRoute = { onRidingViewModeChange(RidingViewMode.MAPA) }) },
                 map = { when (mapEngine) {
@@ -546,6 +551,7 @@ private fun LandscapeRidingLayout(
                         isFollowMode = isFollowMode,
                         bearing = navState.currentBearing,
                         onUserPan = { isFollowMode = false },
+                        safeTopInsetPx = mapTopOverlayBottomPx,
                         modifier = Modifier.fillMaxSize()
                     )
                 }

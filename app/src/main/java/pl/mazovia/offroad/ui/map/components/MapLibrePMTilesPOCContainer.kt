@@ -3,8 +3,11 @@ package pl.mazovia.offroad.ui.map.components
 import android.util.Log
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalLifecycleOwner
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -25,9 +28,43 @@ import org.maplibre.geojson.LineString
 import org.maplibre.geojson.MultiLineString
 import org.maplibre.geojson.Point
 import pl.mazovia.offroad.domain.model.GeoPoint
+import kotlin.math.roundToInt
 
 private const val TAG = "MapLibrePMTiles"
 
+/** Planning: bottom padding as a fraction of the screen height (focal point above the bottom panels). */
+internal const val PLANNING_BOTTOM_PADDING_FRACTION = 0.4
+/** Riding: focal point at this fraction of the map view height below the top overlays (route ahead stays visible). */
+internal const val RIDING_FOCAL_FRACTION = 0.6
+/** Riding: minimum distance between the focal point and the top overlay / bottom view edge. */
+internal val RIDING_FOCAL_CLEARANCE = 32.dp
+
+internal data class MapPadding(val left: Int, val top: Int, val right: Int, val bottom: Int)
+
+/**
+ * Camera content padding for the map view.
+ *
+ * [safeTopInsetPx] null keeps the planning padding, derived from [screenHeightPx]. Otherwise (RIDING) the padding is
+ * derived from the actual map view height: the camera target sits below the top overlays ending at [safeTopInsetPx]
+ * (view coordinates), at least [clearancePx] away from them and from the bottom edge where the view allows it.
+ */
+internal fun cameraPadding(screenHeightPx: Int, viewHeightPx: Int, safeTopInsetPx: Int?, clearancePx: Int): MapPadding {
+    if (safeTopInsetPx == null) return MapPadding(0, 0, 0, (screenHeightPx * PLANNING_BOTTOM_PADDING_FRACTION).toInt())
+    if (viewHeightPx < 2) return MapPadding(0, 0, 0, 0)
+    val top = safeTopInsetPx.coerceIn(0, viewHeightPx)
+    val focal = (top + RIDING_FOCAL_FRACTION * (viewHeightPx - top)).roundToInt()
+        .coerceAtMost(viewHeightPx - clearancePx)
+        .coerceAtLeast(top + clearancePx)
+        .coerceIn(1, viewHeightPx - 1)
+    // MapLibre centres the target in the padded area: focal = top + (height - top - bottom) / 2.
+    val offset = 2 * focal - viewHeightPx
+    return if (offset >= 0) MapPadding(0, offset, 0, 0) else MapPadding(0, 0, 0, -offset)
+}
+
+/**
+ * @param safeTopInsetPx RIDING only: bottom edge (px, map view coordinates) of the persistent overlays drawn over the
+ * top of the map. Null keeps the planning camera padding.
+ */
 @Composable
 fun MapLibrePMTilesPOCContainer(
     currentPosition: GeoPoint?,
@@ -42,7 +79,8 @@ fun MapLibrePMTilesPOCContainer(
     bearing: Double? = null,
     speed: Double? = null,
     zoomSteps: Int = 0,
-    onUserPan: () -> Unit = {}
+    onUserPan: () -> Unit = {},
+    safeTopInsetPx: Int? = null
 ) {
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -62,6 +100,11 @@ fun MapLibrePMTilesPOCContainer(
     
     // Explicit styleReady state to fix race conditions
     var styleReady by remember { mutableStateOf(false) }
+
+    // Actual map view height; the riding padding is derived from it, not from the screen.
+    var viewHeightPx by remember { mutableIntStateOf(0) }
+    val clearancePx = with(LocalDensity.current) { RIDING_FOCAL_CLEARANCE.roundToPx() }
+    val padding = cameraPadding(context.resources.displayMetrics.heightPixels, viewHeightPx, safeTopInsetPx, clearancePx)
 
     val zoomConsumer = remember { MapZoomConsumer() }
     LaunchedEffect(zoomSteps, styleReady) {
@@ -271,14 +314,12 @@ fun MapLibrePMTilesPOCContainer(
             }
             
             // MapLibrePMTilesPOCContainer padding for rider follow
-            val displayMetrics = mapView.context.resources.displayMetrics
-            val bottomPaddingPx = (displayMetrics.heightPixels * 0.4).toInt()
-            mapLibreMap.setPadding(0, 0, 0, bottomPaddingPx)
+            mapLibreMap.setPadding(padding.left, padding.top, padding.right, padding.bottom)
         },
-        modifier = modifier
+        modifier = modifier.onSizeChanged { viewHeightPx = it.height }
     )
 
-    LaunchedEffect(centerRequest, currentPosition, bearing, isFollowMode, styleReady) {
+    LaunchedEffect(centerRequest, currentPosition, bearing, isFollowMode, styleReady, padding) {
         if (!styleReady) return@LaunchedEffect
         
         val mapLibreMap = mapLibreMapRef.value ?: return@LaunchedEffect
@@ -302,8 +343,10 @@ fun MapLibrePMTilesPOCContainer(
                 }
             }
 
+            // Padding travels with the camera update, so the target lands on the focal point even if setPadding lags.
             val builder = CameraPosition.Builder()
                 .target(LatLng(currentPosition.latitude, currentPosition.longitude))
+                .padding(padding.left.toDouble(), padding.top.toDouble(), padding.right.toDouble(), padding.bottom.toDouble())
                 
             // Zoom logic: Zoom 16.0 only when centerRequest changes.
             if (centerChanged) {

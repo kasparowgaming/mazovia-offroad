@@ -11,6 +11,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
@@ -24,6 +26,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 @Composable
 @OptIn(ExperimentalMaterial3Api::class)
@@ -34,8 +37,16 @@ fun RidingMapTerrainBox(
     map: @Composable () -> Unit,
     terrain: @Composable () -> Unit,
     modifier: Modifier = Modifier,
-    unavailableReason: String? = null
+    unavailableReason: String? = null,
+    /** Bottom edge (px, box coordinates) of the overlays drawn over the top of the map. */
+    onTopOverlayBottomChanged: (Int) -> Unit = {}
 ) {
+    var switchBottom by remember { mutableIntStateOf(0) }
+    var reasonBottom by remember { mutableIntStateOf(0) }
+    val showReason = !terrainAvailable && unavailableReason != null
+    val topOverlayBottom = if (showReason) max(switchBottom, reasonBottom) else switchBottom
+    val currentOnTopOverlayBottomChanged by rememberUpdatedState(onTopOverlayBottomChanged)
+    LaunchedEffect(topOverlayBottom) { currentOnTopOverlayBottomChanged(topOverlayBottom) }
     Box(modifier) {
         map()
         if (mode == RidingViewMode.TEREN && terrainAvailable) {
@@ -47,6 +58,7 @@ fun RidingMapTerrainBox(
         }
         SingleChoiceSegmentedButtonRow(
             modifier = Modifier.align(Alignment.TopCenter).padding(top = 8.dp)
+                .onGloballyPositioned { switchBottom = it.boundsInParent().bottom.roundToInt() }
         ) {
             RidingViewMode.entries.forEachIndexed { index, option ->
                 SegmentedButton(
@@ -65,8 +77,9 @@ fun RidingMapTerrainBox(
                 ) { Text(option.name) }
             }
         }
-        if (!terrainAvailable && unavailableReason != null) {
-            Text(unavailableReason, Modifier.align(Alignment.TopCenter).padding(top = 70.dp), color = Color.White)
+        if (showReason) {
+            Text(unavailableReason, Modifier.align(Alignment.TopCenter).padding(top = 70.dp)
+                .onGloballyPositioned { reasonBottom = it.boundsInParent().bottom.roundToInt() }, color = Color.White)
         }
     }
 }
