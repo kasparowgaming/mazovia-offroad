@@ -63,3 +63,16 @@ the change.
 ## Evidence labels
 Use in reports: **VERIFIED** (checked in this run), **SOURCE-READ** (read from code/docs, not executed), **DERIVED**
 (computed from verified values), **NOT REPRODUCED**, **INCONCLUSIVE**.
+
+## Stan prac
+- Zadanie: **TA-007B** (korytarz „road-ahead”, Option D) na nieskomitowanym prototypie **TA-007**. Brak pliku TASK-*.md:
+  spec to `docs/terrain-ahead/DESIGN.md` §23 (TA-007B), §3.7. Worktree `C:\AI_Projects\MazoviaOffroad-ta007`, gałąź `ta-007-prototype` (baza 93ce58b).
+- Zrobione (2026-09-27): `CorridorGeometry` (:terrain), `RoadAheadCorridor` (:app), TEREN renderuje korytarz; 228 testów
+  jednostkowych zielonych; na S25 VERIFIED: korytarz z realnym profilem T7, 9 scen z §22.5, draw p95 8,6 ms (≤ 10 ms).
+- Następny krok: jazda próbna użytkownika → niezależne review TA-007 + TA-007B (świeża sesja) → zgoda na commit.
+- Otwarte problemy:
+  - płynny ruch na urządzeniu NOT REPRODUCED (mock `adb` bez prędkości); landscape niesprawdzony na S25;
+  - znak nawierzchni ginie pod znakiem manewru; „schodek” wysokości na końcu luki danych;
+  - `RoadAheadInstrument.kt` nieużywany (decyzja: usunąć?); brak instrumented testu na realnym archiwum (OD-3);
+  - TASK-NAV-REROUTE-001 (6aa89fc) bez niezależnego review.
+- Na S25 nie uruchamiać `connectedAndroidTest` (odinstalowuje aplikację i dane z Android/data); użyć `adb install -r` + `am instrument`.
