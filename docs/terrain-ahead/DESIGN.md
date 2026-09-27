@@ -43,14 +43,37 @@ Correction pass started `2026-09-24T22:25:06+02:00` on HEAD `312dae97f07ed2cab66
   G-DATA-1…4 (§22.3).
 - Battery measurement protocol clarified (charge counter, ≥ 3 + 3 trials, §21.5); n = 5 glance test declared exploratory (§3.5, §22.6).
 
+### 0.2 TA-000B-C2 — V1 visual mode changed to Option D "road-ahead corridor"
+
+Operator decision 2026-09-27 (OD-1 decided, §26). Pre-change `DESIGN.md` blob `b1de916ce20e06e9b3616434c165d6151a813846`.
+Only this file changed.
+
+- **Why:** the product idea (inspired by hop.earth) was a view of the road ahead seen from behind the motorcycle — a 3D-like
+  corridor ("tunel") — not an elevation chart. Option C (profile strip) was adopted as V1 by default in TA-000B without an explicit
+  operator decision; the operator rejected it as the product.
+- **V1 = Option D (§3.7):** the route's real plan geometry for the next 600 m, projected in perspective from a chase camera behind
+  and above the rider, drawn with Compose Canvas (no 3D engine, no terrain mesh). Road ribbon coloured by surface, active route
+  line, grade-coloured edges, maneuver sign, 100 m distance gates, labelled vertical exaggeration.
+- **Unchanged:** the renderer-independent terrain core (§4–§12: projection axis `s`, sampler, PMTiles reader, Raw/Filtered/Grade/
+  Display profiles, grade events), data format and gates (G-DATA), MAP ↔ TERRAIN switch and failure fallback (§16, §19.4), the
+  frozen set (§24 "UNCHANGED — FROZEN"), OD-6 (no frozen-class exceptions).
+- **Invariants restated for D:** vertical exaggeration and any render-only geometry never feed Raw/Filtered/Grade profiles or
+  `GradeEventDetector`; unavailable elevation is never drawn as 0 m and grade colouring never bridges a coverage gap.
+- **Option C** is retired as the V1 visual. The existing strip (`RoadAheadInstrument.kt`) stays in the tree only until the
+  corridor replaces it (TA-007B, §23). **Option A** (terrain mesh) remains behind G-3D, now compared against D; it reuses D's
+  camera and geometry.
+- Sections touched: §1, §3.5 (superseded note), §3.7 (new), §13, §14, §15.1, §15.6, §16.1 (note), §17.1, §19.2, §21, §22.5,
+  §22.6, §23, §24, §25.4, §26, §27, §29.
+
 ---
 
 ## 1. Executive decision
 
-1. **V1 visual mode — recommendation: Option C "Road-Ahead instrument"** (2D/2.5D strip: next 300–600 m profile, surface bands,
-   grade markers, next maneuver), rendered with Compose Canvas. **True 3D (Option A) is not abandoned**: it stays behind gate
-   **G-3D** (glance test + renderer spike) and becomes V1.1/V2 only if it measurably beats Option C in the one-second glance test.
-   Decision remains with the operator (§26 OD-1, OD-2).
+1. **V1 visual mode — DECIDED (TA-000B-C2, 2026-09-27): Option D "road-ahead corridor"** (§3.7): next 600 m of the route's
+   real geometry in perspective from a chase camera, surface-coloured road ribbon, grade-coloured edges, maneuver sign, distance
+   gates, rendered with Compose Canvas. The original TA-000B recommendation was Option C (profile strip); it is superseded.
+   **True 3D with a terrain mesh (Option A) is not abandoned**: it stays behind gate **G-3D** (glance test + renderer spike) and
+   becomes V1.1/V2 only if it measurably beats Option D (§26 OD-1, OD-2).
 2. **The renderer-independent terrain core is built first and serves A and C**: `TerrainRouteProjection` → `ElevationSampler` →
    Raw/Filtered/Grade profiles → `GradeEvents`, in a new module `:terrain` (depends on `:domain` only). Route progress uses the
    NavigationManager-compatible haversine axis `s` with edge-local projection (C1); DEM data is never rewritten by filtering or
@@ -177,6 +200,9 @@ All cells are INFERRED expectations to be tested with §22.6; none is MEASURED.
 
 ### 3.5 Recommendation
 
+> **SUPERSEDED by TA-000B-C2 (§0.2, §3.7):** V1 = Option D. The block below is the original TA-000B reasoning, kept for history.
+> G-3D now compares A against D, not C.
+
 ```text
 RECOMMENDATION   V1 = Option C (road-ahead instrument) on top of the shared terrain core.
                  (G-3D margin below is a PRODUCT GATE TARGET from an exploratory n ≥ 5 test, not statistical proof — §22.6.)
@@ -204,6 +230,45 @@ True 3D status: **moves behind gate G-3D (V1.1 or V2)**; not abandoned.
 **Cheap mock-up procedure (before any renderer spike)**: render 12 static frames per option (same 12 route snippets from TA-001B real
 profiles, mixed turns/climbs/surfaces) as images on a desktop tool (any renderer/drawing tool, outside the app), show them on the
 target phone in the handlebar mount with §22.6 protocol. Cost: mock images only; no app code.
+
+### 3.7 Option D — road-ahead corridor (V1, TA-000B-C2)
+
+A chase-camera view of the **route itself**: the next 600 m of real plan geometry with Display heights, projected in perspective
+from behind and above the rider. It gives the "tunnel ahead" reading of Option A without a terrain mesh or a 3D engine.
+
+```text
+            PODJAZD 6 %  za 120 m · 120 m          ← HUD: next grade event; top-left: current grade
+     ┌───── 300 m ─────┐   (↱ 340 m)              ← distance gate, maneuver sign above the junction
+       ┌── 200 m ──┐  ╱                            ← road bends and climbs in perspective; edges yellow on the climb
+         ┌100 m┐   ╱
+          ╲ ▒▒ ╱                                   ← road ribbon coloured by surface, cyan active-route centre line
+           ╲▲ ╱        [wysokość ×2,5]             ← rider chevron; labelled vertical exaggeration
+```
+
+Geometry (TARGETS unless stated; tuned in TA-007B on the S25):
+- **Window:** `[s − 20 m, s + 600 m]` on the navigation-compatible axis `s` (§6.2); plan positions from the route polyline via the
+  edge-local frame, converted to render-scene ENU (§10); heights from `DisplayElevationProfile` (§12) × vertical exaggeration.
+- **Vertical exaggeration:** fixed for the ride, default ×2.5, always shown as a label on screen. Applies to render-scene heights
+  only; never to Raw/Filtered/Grade profiles or events (C2 rule).
+- **Camera:** on the route at `s − 18 m`, 9 m above the Display height there; looks at the route point `s + 75 m`; focal length
+  ≈ 1.05 × view width; pose driven by `sDisplay` (§15.2), heading implied by the route (no separate GPS heading while ATTACHED).
+- **Road ribbon:** 4.8 m visual width, colour by `RouteSegment.surface` band (UNKNOWN / GPX → neutral grey "nieznana", C7); cyan
+  active-route centre line (§14.6 contrast rule); white edges, recoloured on `GradeEventDetector` spans (climb / steep / descent).
+- **Context:** flat shoulder bands ±26 m shaded by grade (visual cue, not terrain); distance gates every 100 m labelled up to
+  400 m; delineator posts every 25 m; distance fog from 120 m to 640 m.
+- **Overlays in the scene:** next maneuver sign above the maneuver point with distance; grade-event flag at event start; surface
+  change sign at band boundaries; rider chevron on the road.
+- **HUD (screen space):** current grade (left), next grade event with distance and length (right), exaggeration label.
+- **Coverage gaps:** `Unavailable` spans are drawn as an outlined grey "brak danych" ribbon held at the last available height
+  (visibly marked, never 0 m); no grade colouring and no event across the gap.
+- **Rendering:** CPU projection + painter's order (far → near per ~3 m segment, ≈ 200–250 segments), Compose Canvas; no new
+  native dependency. Crest occlusion follows from painter's order.
+- **Not in V1:** terrain mesh (Option A, G-3D), side roads at junctions (need OSM junction data that the frozen `Route` does not
+  carry, §27), land-cover colouring, buildings, imagery.
+
+Reference mock-up (2026-09-27, synthetic route): https://claude.ai/artifact/RBFYBbJhCEjL9FnBfejdEc (private to the operator).
+Low relief: at ×1 Mazovian climbs are barely visible (INFERRED from the mock-up); exaggeration is the mitigation, bounded by R2.
+Risk: LOW–MEDIUM (look-and-feel and legibility, not technology).
 
 ---
 
@@ -925,7 +990,8 @@ With lazy 2 km windows the live footprint is ≈ 32 KB. Traceability is kept; sa
 
 ## 13. Renderer architecture
 
-(Applies to Option A. Option C uses Compose Canvas — already on the classpath, VERIFIED `designsystem/build.gradle.kts`.)
+(Applies to Option A. Options C and D use Compose Canvas — already on the classpath, VERIFIED `designsystem/build.gradle.kts`.
+Option D projects on the CPU (§3.7); no GPU renderer is added for V1.)
 
 ### 13.1 Why MapLibre Native is/is not sufficient
 
@@ -1017,7 +1083,7 @@ Spike code lives on a separate branch/module never merged into `main` without a 
 
 ---
 
-## 14. Scene geometry (Option A; C uses §3.3 only)
+## 14. Scene geometry (Option A; C uses §3.3 only; D uses §3.7 plus the §14.4 ribbon rules and §14.6 active-route rules, without terrain chunks or §14.5 blending)
 
 ### 14.1 Terrain extent
 
@@ -1062,6 +1128,8 @@ with depth-test offset so it is not hidden at crests.
 
 Option A: camera target = interpolated projected point + 60 m ahead along route (TARGET); camera behind at 40 m, height 25 m,
 pitch ~35° (TARGETS, tuned in spike). Option C: the strip's "camera" is the window [s − 50, s + 600] (TARGET).
+Option D (V1): chase camera on the route at `s − 18 m`, 9 m above Display height, look-at route point `s + 75 m` (TARGETS, §3.7);
+interpolation runs on the Compose animation clock like C.
 
 ### 15.2 Position interpolation
 
@@ -1090,7 +1158,8 @@ if last speed == 0 → treat as stationary (no indicator). Both are harmless fre
 ### 15.6 Off-route / GPX
 
 Off-route: DETACHED mode — Option C shows "poza trasą" state with distance-to-route (`distanceToGpxMeters` for GPX when provided,
-VERIFIED `NavigationState.kt:22`); Option A centres on GPS position with GPS heading and keeps the route visible. GPX: same as
+VERIFIED `NavigationState.kt:22`); Option A centres on GPS position with GPS heading and keeps the route visible; Option D freezes
+the last attached pose, greys the corridor and shows "poza trasą" with the distance. GPX: same as
 calculated routes; gaps render as broken ribbon; no maneuvers (VERIFIED `GpxRoute.kt`: none created).
 
 ---
@@ -1118,6 +1187,11 @@ calculated routes; gaps render as broken ribbon; no maneuvers (VERIFIED `GpxRout
 | map PMTiles missing | REACHABLE (AUDIT R12) | independent | unaffected | TERRAIN works if terrain archive exists | TERRAIN is a valid alternative view | terrain instrument | none |
 | renderer init failure | DEFENSIVE | — | — | TERRAIN tab disabled with reason | MAP | MAP + disabled TEREN | none |
 | renderer runtime failure | DEFENSIVE | release | — | auto-switch to MAP once, tab disabled for the ride | MAP | MAP | none |
+
+Option D (V1, TA-000B-C2) follows the C column's semantics row by row, drawn as a corridor: ON_ROUTE → live corridor; OFF_ROUTE /
+RECALCULATING → frozen, greyed corridor + reason; FOLLOWING_GPX → grey "nieznana" ribbon, no maneuver signs; DEM tile missing →
+outlined "brak danych" ribbon span (§3.7), surface colours and maneuver sign continue; GPS lost → frozen pose + stale indicator;
+renderer failures → identical MAP fallback.
 
 ### 16.2 Reachable vs unwired states
 
@@ -1150,6 +1224,8 @@ Terrain handles unwired states defensively only; it does not wire them (§27).
 | Mesh generation (A) | `Default` | view-scoped |
 | GPU upload + render loop (A) | renderer thread (Filament/WebView) | render-thread-scoped |
 | Canvas draw (C) | main thread, draw only (no allocation-heavy work) | view-scoped |
+| Corridor window geometry (D): plan + Display heights for `[s − 20, s + 600]` | `Default`, rebuilt when the window advances | view-scoped |
+| Corridor projection + Canvas draw (D) | main thread, per frame; preallocated buffers, no per-frame allocation | view-scoped |
 | Cache eviction | `Default`, on progress events | ride-scoped |
 
 ### 17.2 Cancellation
@@ -1215,8 +1291,8 @@ so simply removing the MapView from composition = Option C behaviour today.
 ### 19.2 Recommendation
 
 ```text
-RECOMMENDATION  Option C (V1 = instrument): keep MapView alive and visible — the instrument replaces only part of the map box or
-                overlays it; no pausing needed; negligible extra cost.
+RECOMMENDATION  Option C (instrument) and Option D (V1 corridor): no second GPU renderer; keep the MapView handling that TA-006
+                shipped; negligible extra cost.
                 Option A (3D): Option B — keep MapView composed but hidden, call MapView.onPause() (renderer pause, VERIFIED C11)
                 while TERRAIN is shown, onResume() on return.
 WHY             fastest safe switch; MapLibre 11.11.0 exposes the needed calls; avoids style reload on every switch.
@@ -1290,17 +1366,18 @@ Alternative (OD-7): integrate into `RidePackEvaluator` later if the operator wan
 
 Device class (TARGET): Android 12+, 4–6 GB RAM, 2021–2023 mid-range SoC with OpenGL ES 3.2 GPU, 1080p screen.
 
-| Metric | Option C | Option A |
-|---|---|---|
-| FPS | 30 while animating (idle otherwise) | ≥ 30 sustained |
-| Frame time p95 | ≤ 8 ms draw on main thread | ≤ 33 ms |
-| Tile lookup + decode (z15 PNG) | ≤ 15 ms p95, off main thread | same |
-| Profile window (2 km) build | ≤ 50 ms | same |
-| Chunk mesh build | — | ≤ 8 ms per chunk, background |
-| GPU upload per chunk | — | ≤ 2 ms |
-| MAP → TERRAIN | ≤ 300 ms | ≤ 500 ms warm, ≤ 1 500 ms cold |
-| TERRAIN → MAP | ≤ 300 ms | ≤ 300 ms (resume) |
-| Cold terrain start (archive open + first window) | ≤ 500 ms | ≤ 1 500 ms |
+| Metric | Option C | Option D (V1) | Option A |
+|---|---|---|---|
+| FPS | 30 while animating (idle otherwise) | 30 while moving (idle when stationary) | ≥ 30 sustained |
+| Frame time p95 | ≤ 8 ms draw on main thread | ≤ 10 ms projection + draw on main thread | ≤ 33 ms |
+| Tile lookup + decode (z15 PNG) | ≤ 15 ms p95, off main thread | same | same |
+| Profile window (2 km) build | ≤ 50 ms | same | same |
+| Corridor window geometry rebuild | — | ≤ 5 ms, background | — |
+| Chunk mesh build | — | — | ≤ 8 ms per chunk, background |
+| GPU upload per chunk | — | — | ≤ 2 ms |
+| MAP → TERRAIN | ≤ 300 ms | ≤ 300 ms | ≤ 500 ms warm, ≤ 1 500 ms cold |
+| TERRAIN → MAP | ≤ 300 ms | ≤ 300 ms | ≤ 300 ms (resume) |
+| Cold terrain start (archive open + first window) | ≤ 500 ms | ≤ 500 ms | ≤ 1 500 ms |
 
 ### 21.2 Flagship target
 
@@ -1310,7 +1387,7 @@ Device class (TARGET): current-generation flagship SoC, 8+ GB RAM. Option A: 60 
 
 | Item | TARGET |
 |---|---|
-| Terrain subsystem heap + native (C) | ≤ 32 MB |
+| Terrain subsystem heap + native (C, D) | ≤ 32 MB |
 | Terrain subsystem incl. renderer (A) | ≤ 96 MB (+ renderer baseline measured in TA-002) |
 | Decoded DEM cache | 16 MB (DERIVED 64 blocks) |
 | CPU mesh cache (A) | 8 MB |
@@ -1321,6 +1398,8 @@ Device class (TARGET): current-generation flagship SoC, 8+ GB RAM. Option A: 60 
 ### 21.4 Battery/thermal targets
 
 - Option C: ≤ +3 % battery vs MAP over 30 min (TARGET; MAP stays rendering).
+- Option D (V1): ≤ +5 % battery vs MAP over 30 min (TARGET; continuous 30 fps redraw while moving); no thermal warnings
+  attributable to terrain.
 - Option A: ≤ +15 % vs MAP over 30 min; no thermal-throttling-induced drop below 30 fps within 30 min at room temperature (TARGET).
 
 ### 21.5 Measurement plan
@@ -1444,7 +1523,9 @@ with GPS altitude used only as a weak cross-check (ellipsoidal datum, §7.5).
 
 ### 22.5 Renderer validation
 
-Option C: screenshot tests of the instrument for scripted states. Option A: visual check that ribbon never intersects terrain in the
+Option C: screenshot tests of the instrument for scripted states. Option D (V1): screenshot tests for scripted poses and states
+(straight, climb, crest with occlusion, 90° turn, S-bends, coverage gap, off-route, stale, GPX); no geometry drawn behind the camera;
+projection unit tests (known pose → known screen points). Option A: visual check that ribbon never intersects terrain in the
 test scene, no gaps at chunk seams, active route visible in all states.
 
 ### 22.6 One-second glance test
@@ -1453,7 +1534,8 @@ test scene, no gaps at chunk seams, active route visible in all states.
 2. Show 1.0 s, then blank.
 3. Ask: turn direction (L/R/straight)? climb/flat/descent? junction yes/no? surface change yes/no?
 4. ≥ 5 riders (TARGET), record per-question correctness and response time.
-5. Pass: ≥ 80 % correct per question (TARGET); candidate comparison per §3.5.
+5. Pass: ≥ 80 % correct per question (TARGET); candidate comparison per §3.5 (after TA-000B-C2: V1 candidate = D; G-3D
+   compares A vs D).
 6. Interpretation (TA-000B-C1): n = 5 is an **exploratory** usability test. The 10 pp A-vs-C margin in G-3D is a product gate
    TARGET, not statistical proof, and no statistical significance is claimed. If A and C differ by less than the margin, or results
    conflict across questions, the result is **INCONCLUSIVE**; the operator may test more riders, inspect route-type subgroups,
@@ -1557,8 +1639,28 @@ Branch by V1 decision: **C-path** (recommended) and **A-path** (after G-3D). Tas
 
 Alternative branch: **IF OPTION A IS SELECTED FOR V1 (OD-1 = A)**: order becomes TA-001A → TA-001B (G-DATA) → mock-up glance →
 TA-002 (G-3D) → TA-003 → TA-004 → TA-005 → TA-006 → TA-007 → TA-008 → TA-009 → TA-010.
-**IF OPTION C (recommended)**: TA-001A → TA-001B (G-DATA) → TA-005(C) → TA-006 → TA-007 → TA-008 → TA-009 → TA-010 (V1);
-then mock-up glance G-3D → TA-002 → TA-003/004 as V1.1/V2.
+**IF OPTION C (original recommendation, superseded)**: TA-001A → TA-001B (G-DATA) → TA-005(C) → TA-006 → TA-007 → TA-008 →
+TA-009 → TA-010 (V1); then mock-up glance G-3D → TA-002 → TA-003/004 as V1.1/V2.
+
+**OPTION D (selected, TA-000B-C2)** — as-built status and order:
+TA-001A → TA-001B (G-DATA) → TA-005(C) → TA-006 (switch + strip, done) → **TA-007** (repurposed by operator 2026-09-26: runtime
+terrain elevation wiring — real archive → profile visible in TEREN; prototype exists, review pending) → **TA-007B** (corridor
+renderer, below) → glance/sunlight UX tuning on the corridor (§22.6–§22.7) → TA-008 (practical Mazowsze coverage + readiness) →
+TA-009 → TA-010 (V1). Then G-3D (A vs D) → TA-002 → TA-003/004 as V1.1/V2.
+
+**TA-007B — Road-ahead corridor renderer (Option D, V1)**
+- GOAL: replace the strip in TEREN with the §3.7 corridor, fed by the same presentation state.
+- WHY: operator decision OD-1 = D (§0.2).
+- INPUTS: §3.7, §14.4, §14.6, §15, §16.1 (D note), §21 (D column); TA-007 runtime profile; reference mock-up (§3.7).
+- OUTPUTS: `CorridorGeometry` in `:terrain` (pure Kotlin: window plan points in render-scene ENU + Display heights + gap/event/
+  surface/maneuver annotations; no Android), `RoadAheadCorridor` Canvas renderer in `:app` (camera, projection, painter's order,
+  overlays, HUD), TerrainPresenter mapping, strip removed from TEREN.
+- FROZEN: §24 frozen set; `TerrainSourceBoundaryTest` unchanged; navigation semantics unchanged.
+- TESTS: geometry unit tests (axis agreement with `s`, gap handling, exaggeration never reaching grade/events); projection unit
+  tests; screenshot/state tests per §22.5 (D).
+- DoD: corridor visible on the physical S25 with a real (non-fixture) profile; §16.1 D states reachable in the simulator; no
+  regression in MAP/navigation; draw p95 recorded (§21, D column).
+- STOP: any need to change a frozen class or navigation semantics → OPEN DECISION.
 
 ---
 
@@ -1598,6 +1700,11 @@ then mock-up glance G-3D → TA-002 → TA-003/004 as V1.1/V2.
 | `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/TerrainRideSession.kt` | :app | ride-scoped holder (archive, caches, profile) | :terrain | 006 |
 | `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/TerrainPresenter.kt` | :app | collects navigation state, drives projection, maps to UI model, interpolation | :terrain, :designsystem | 005/006 |
 | `app/src/debug/java/pl/mazovia/offroad/debug/NavigationStateReplayer.kt` | :app (debug) | simulator §22.2 | :terrain | 005 |
+| `terrain/src/main/java/pl/mazovia/offroad/terrain/presentation/CorridorGeometry.kt` | :terrain | Option D window geometry: plan points (render-scene ENU) + Display heights + gap/event/surface/maneuver annotations; pure Kotlin | projection, profiles | 007B |
+| `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadCorridor.kt` | :app | Option D Canvas renderer: chase camera, projection, painter's order, overlays, HUD | compose, :terrain | 007B |
+
+Note (TA-000B-C2): the as-built strip lives at `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadInstrument.kt`
+(not `:designsystem` as planned above); TA-007B retires it from TEREN.
 
 ### MODIFIED
 
@@ -1668,6 +1775,9 @@ archive is ever wanted — not planned); map/routing migration into ride packs (
 | R1 | 3D looks impressive but reads worse | M | H | glance test before spike; n = 5 exploratory, INCONCLUSIVE → operator (§22.6) | G-3D |
 | R2 | Exaggerated vertical scale misleads | M | M | explicit scale label in C; fixed exaggeration in A | 007 |
 | R3 | Surface bands wrong for GPX (UNKNOWN surfaces) | H | L | show "nieznana", not colours (C7) | 006 |
+| R4 | Corridor (D) looks flat at true scale or overstates steepness when exaggerated | H | M | fixed, labelled exaggeration; grade numbers from GradeProfile only; tune on S25 | 007B |
+| R5 | Corridor (D) without side roads makes junctions hard to read | M | M | maneuver sign + MAP stays one tap away; side roads from OSM in backlog (§27) | 007B |
+| R6 | Near-field clutter (signs, gates, flags) hurts one-second glance | M | M | label distance limits (§3.7), glance test §22.6 on D | 007B/UX |
 
 ### 25.5 Mitigations and owner task
 
@@ -1677,15 +1787,17 @@ Covered per row above; any risk becoming an issue is recorded in the owning task
 
 ## 26. Open decisions for operator
 
-**OD-1 V1 visual definition**
-- OPTIONS: A true 3D / B pitched map / C instrument.
-- RECOMMENDATION: C.
-- CONSEQUENCES: A → TA-002/003/004 on the V1 critical path (high risk, highest cost); B → little product value; C → fastest V1, core reused.
-- EVIDENCE: mock-up glance test (§3.6), TA-001B relief statistics.
+**OD-1 V1 visual definition — DECIDED 2026-09-27 (TA-000B-C2): D road-ahead corridor**
+- OPTIONS: A true 3D / B pitched map / C instrument / D corridor (added in C2).
+- ORIGINAL RECOMMENDATION: C. OPERATOR DECISION: D — the product intent is a chase-camera view of the road ahead (hop.earth-like),
+  not an elevation chart.
+- CONSEQUENCES: A → TA-002/003/004 on the V1 critical path (high risk, highest cost); B → little product value; C → fastest V1,
+  core reused, rejected by the operator; D → core reused, Canvas only, renderer rewrite (TA-007B).
+- EVIDENCE: operator review of the C and D mock-ups (2026-09-27); glance test §22.6 on D still required for V1 (§29).
 
-**OD-2 Does true 3D remain V1 if C glances better?**
-- OPTIONS: keep A in V1 regardless / A only if it beats C (G-3D) / drop A.
-- RECOMMENDATION: A only via G-3D.
+**OD-2 Does true 3D remain V1 if D glances better?**
+- OPTIONS: keep A in V1 regardless / A only if it beats D (G-3D) / drop A.
+- RECOMMENDATION: A only via G-3D (A reuses D's camera and corridor geometry, adding a terrain mesh).
 - CONSEQUENCES: regardless → cost without evidence; G-3D → evidence-driven; drop → loses future differentiation.
 - EVIDENCE: §22.6 results.
 
@@ -1723,7 +1835,7 @@ Covered per row above; any risk becoming an issue is recorded in the owning task
 
 **OD-8 Corridor width for packs**
 - OPTIONS: 500 m / 1 000 m.
-- RECOMMENDATION: 500 m for C, 1 000 m if A.
+- RECOMMENDATION: 500 m for C and D, 1 000 m if A.
 - EVIDENCE: §9.3–9.4 sizes, TA-008 budget.
 
 ---
@@ -1742,6 +1854,9 @@ Not designed, not fixed here:
 9. TerrainRadar computed in composition; portrait/landscape look-ahead mismatch (AUDIT F8, R3).
 10. Optional: hillshade layer in MAP (MapLibre Native, int-metre DEM; low value in flat terrain).
 11. Routing graph / map PMTiles build provenance (AUDIT §5 items 3-4).
+12. Corridor (D) side roads at junctions: needs OSM junction geometry outside the frozen `Route` model (separate data source).
+13. Corridor (D) land-cover colouring of shoulders from OSM (forest / field / water).
+14. Terrain mesh under the corridor (Option A) — only via G-3D.
 
 ---
 
@@ -1772,7 +1887,9 @@ All consulted 2026-09-24.
 
 ## 29. Definition of V1 complete
 
-V1 (C-path) is complete when **all** hold (TARGET thresholds, measured per §21.5/§22):
+V1 (D-path since TA-000B-C2) is complete when **all** hold (TARGET thresholds, measured per §21.5/§22). The table was written for
+the C-path; for D read "instrument" as "corridor", Visual continuity uses the §21 D frame budget, Battery/thermal is ≤ +5 % (§21.4),
+Missing-data fallback uses the §3.7 gap rendering, and the glance and sunlight tests run on the corridor.
 
 | Area | Criterion |
 |---|---|
