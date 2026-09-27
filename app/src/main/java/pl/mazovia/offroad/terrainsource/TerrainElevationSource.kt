@@ -4,11 +4,15 @@ import android.content.Context
 import android.util.Log
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import pl.mazovia.offroad.terrain.dem.BitmapFactoryTileImageDecoder
 import pl.mazovia.offroad.terrain.dem.PmtilesElevationSampler
 import pl.mazovia.offroad.terrain.dem.PmtilesReader
 import pl.mazovia.offroad.terrain.dem.TerrainRgbTileDecoder
+import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
+import pl.mazovia.offroad.terrain.presentation.TerrainGrid
 import pl.mazovia.offroad.terrain.profile.RouteTerrainProfile
 import pl.mazovia.offroad.terrain.profile.RouteTerrainProfileBuilder
 import pl.mazovia.offroad.terrain.projection.RouteIndex
@@ -58,26 +62,53 @@ class TerrainProfileRequest(val index: RouteIndex) {
 }
 
 /**
- * Owns one sampler (reader + tile cache) and builds a profile for the requested route. Single consumer; [close]
- * releases the archive. A failed build returns null (terrain failure never propagates to navigation).
+ * Owns one sampler (reader + tile cache) and builds a profile for the requested route and the C3 terrain grid around a
+ * corridor window. Builds take turns on the sampler (one at a time); [close] releases the archive. A failed build
+ * returns null (terrain failure never propagates to navigation).
  */
 class TerrainProfileSession(private val context: Context) : Closeable {
     private val sampler = LazyCloseable { TerrainElevationSource.open(context) }
+    /** Profile and grid builds are separate coroutines; the sampler serves one at a time. */
+    private val turn = Mutex()
 
     suspend fun build(request: TerrainProfileRequest): RouteTerrainProfile? = withContext(Dispatchers.Default) {
         val route = request.index
         try {
-            sampler.withResource { source ->
+            turn.withLock { sampler.withResource { source ->
                 val started = System.nanoTime()
                 RouteTerrainProfileBuilder.build(route, source).also {
                     Log.i("TerrainSource", "profile ${route.routeId}: ${it.availableSamples}/${it.raw.size} samples " +
                         "with elevation, ${it.events.size} events, ${(System.nanoTime() - started) / 1_000_000} ms")
                 }
-            }
+            } }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w("TerrainSource", "terrain profile build failed", e)
+            null
+        }
+    }
+
+    /**
+     * C3 terrain grid around [corridor] (DESIGN §0.3), built off the main thread; null without an archive, without
+     * corridor heights or on failure (the corridor is then drawn without a grid, as in TA-007B).
+     */
+    suspend fun buildGrid(corridor: CorridorGeometry): TerrainGrid? = withContext(Dispatchers.Default) {
+        if (!TerrainGrid.canBuild(corridor)) return@withContext null
+        try {
+            turn.withLock { sampler.withResource { source ->
+                val started = System.nanoTime()
+                TerrainGrid.build(corridor, source)?.also {
+                    val s = it.stats
+                    Log.i("TerrainGrid", ("grid at s=%.0f: %d cells (%d dropped), %d/%d nodes, " +
+                        "ribbon offset p50 %.2f m p95 %.2f m, build %.1f ms").format(corridor.anchorM, s.cellsDrawn, s.cellsDropped, s.nodesAvailable, s.nodesInBand,
+                            s.ribbonOffsetMedianM, s.ribbonOffsetP95M, (System.nanoTime() - started) / 1e6))
+                }
+            } }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("TerrainGrid", "terrain grid build failed", e)
             null
         }
     }

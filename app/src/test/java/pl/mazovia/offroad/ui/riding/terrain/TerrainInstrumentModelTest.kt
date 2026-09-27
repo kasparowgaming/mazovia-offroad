@@ -3,10 +3,13 @@ package pl.mazovia.offroad.ui.riding.terrain
 import org.junit.Assert.*
 import org.junit.Test
 import pl.mazovia.offroad.debug.NavigationStateReplayer as Replay
+import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
+import pl.mazovia.offroad.terrain.presentation.CorridorRoute
 import pl.mazovia.offroad.terrain.profile.DisplayElevationProfile
 import pl.mazovia.offroad.terrain.profile.FilteredElevationProfile
 import pl.mazovia.offroad.terrain.profile.GradeProfile
 import pl.mazovia.offroad.terrain.profile.RawElevationProfile
+import pl.mazovia.offroad.terrain.projection.RouteIndex
 
 class TerrainInstrumentModelTest {
     private fun grade(available: Boolean = true): GradeProfile {
@@ -86,5 +89,49 @@ class TerrainInstrumentModelTest {
         assertTrue(longAt(-300.0) is TerrainInstrumentModel.Valid)
         assertTrue(longAt(250_010.0) is TerrainInstrumentModel.Valid)
         assertTrue(longAt(250_100.0) is TerrainInstrumentModel.NoData)
+    }
+
+    private fun corridorOf(id: String, riderM: Double = 100.0): CorridorGeometry {
+        val route = Replay.route(id)
+        val index = RouteIndex.build(route)
+        val display = DisplayElevationProfile.from(FilteredElevationProfile.from(RawElevationProfile.fromHeights(
+            id, List(201) { 100.0 + it * .2 })))
+        return CorridorGeometry.build(CorridorRoute.build(route, index), display, emptyList(), riderM)!!
+    }
+
+    private fun valid(corridor: CorridorGeometry?, riderM: Double = 100.0) =
+        TerrainInstrumentModel.Valid(riderM, "0 %", null, false, false, corridor)
+
+    @Test fun routeChangeFreezesTheLastCorridorWhileTheNewProfileLoads() {
+        val old = corridorOf("old")
+        val shown = valid(old, 120.0)
+        // The new route's first frames: no corridor yet, or a flat one of the new route.
+        val frozen = reloadingModel(shown, TerrainInstrumentModel.NoData(false, false, 0.0), profileLoading = true)
+        assertEquals(TerrainInstrumentModel.Reloading(120.0, old), frozen)
+        assertSame(frozen, reloadingModel(frozen, valid(corridorOf("new")), profileLoading = true))
+        assertSame(frozen, reloadingModel(frozen, TerrainInstrumentModel.Detached(30.0), profileLoading = true))
+        // Loading finished: the new route's model replaces the frozen view.
+        val next = valid(corridorOf("new"))
+        assertSame(next, reloadingModel(frozen, next, profileLoading = false))
+    }
+
+    @Test fun noFreezeWithoutAnEarlierCorridorOrForTheSameRoute() {
+        val next = TerrainInstrumentModel.NoData(false, false, 0.0)
+        assertSame(next, reloadingModel(TerrainInstrumentModel.NoRoute, next, profileLoading = true))
+        assertSame(next, reloadingModel(TerrainInstrumentModel.NoData(false, false), next, profileLoading = true))
+        val old = corridorOf("old")
+        val same = valid(old, 130.0)
+        assertSame(same, reloadingModel(valid(old), same, profileLoading = true))
+        assertSame(next, reloadingModel(valid(old), next, profileLoading = false))
+    }
+
+    @Test fun noRouteAndArrivalEndTheFreezeAtOnce() {
+        val frozen = TerrainInstrumentModel.Reloading(120.0, corridorOf("old"))
+        assertSame(TerrainInstrumentModel.NoRoute,
+            reloadingModel(frozen, TerrainInstrumentModel.NoRoute, profileLoading = true))
+        assertSame(TerrainInstrumentModel.Arrived,
+            reloadingModel(valid(corridorOf("old")), TerrainInstrumentModel.Arrived, profileLoading = true))
+        assertSame(frozen.corridor, frozen.shownCorridor)
+        assertEquals(120.0, frozen.shownRiderM!!, 0.0)
     }
 }

@@ -27,6 +27,50 @@ sealed interface TerrainInstrumentModel {
         val stale: Boolean, val showStaleIndicator: Boolean,
         val corridor: CorridorGeometry? = null
     ) : TerrainInstrumentModel
+    /** Route changed (DESIGN §16.1, C3): the last corridor view of the previous route, frozen and greyed while the new
+     *  route's profile loads. */
+    data class Reloading(val riderM: Double, val corridor: CorridorGeometry) : TerrainInstrumentModel
+}
+
+/** Corridor the model draws, if any. */
+val TerrainInstrumentModel.shownCorridor: CorridorGeometry?
+    get() = when (this) {
+        is TerrainInstrumentModel.Valid -> corridor
+        is TerrainInstrumentModel.Detached -> corridor
+        is TerrainInstrumentModel.NoData -> corridor
+        is TerrainInstrumentModel.Reloading -> corridor
+        TerrainInstrumentModel.NoRoute, TerrainInstrumentModel.Arrived -> null
+    }
+
+/** Rider position on [shownCorridor]'s axis, if any. */
+val TerrainInstrumentModel.shownRiderM: Double?
+    get() = when (this) {
+        is TerrainInstrumentModel.Valid -> riderM
+        is TerrainInstrumentModel.Detached -> riderM
+        is TerrainInstrumentModel.NoData -> riderM
+        is TerrainInstrumentModel.Reloading -> riderM
+        TerrainInstrumentModel.NoRoute, TerrainInstrumentModel.Arrived -> null
+    }
+
+/**
+ * DESIGN §16.1 route changed (C3): while [profileLoading] (the profile of a new route is being built) and [last] showed a
+ * corridor of another route, the view stays on that corridor, frozen and greyed ([TerrainInstrumentModel.Reloading]),
+ * instead of an empty or flat new corridor. Ends with the first model of the new route after loading, or at once on
+ * NO_ROUTE / ARRIVED. Presentation only: navigation state is not touched.
+ */
+fun reloadingModel(
+    last: TerrainInstrumentModel,
+    next: TerrainInstrumentModel,
+    profileLoading: Boolean
+): TerrainInstrumentModel {
+    if (!profileLoading || next === TerrainInstrumentModel.NoRoute || next === TerrainInstrumentModel.Arrived) return next
+    if (last is TerrainInstrumentModel.Reloading) {
+        return if (next.shownCorridor?.routeId == last.corridor.routeId) next else last
+    }
+    val corridor = last.shownCorridor ?: return next
+    val rider = last.shownRiderM ?: return next
+    if (next.shownCorridor?.routeId == corridor.routeId) return next
+    return TerrainInstrumentModel.Reloading(rider, corridor)
 }
 
 fun terrainInstrumentModel(frame: TerrainDisplayState, corridor: CorridorGeometry? = null): TerrainInstrumentModel {

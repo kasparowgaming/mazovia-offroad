@@ -34,8 +34,15 @@ import pl.mazovia.offroad.domain.model.RouteSegment
 import pl.mazovia.offroad.domain.model.RouteSource
 import pl.mazovia.offroad.domain.model.RoutingProfile
 import pl.mazovia.offroad.domain.model.Surface
+import pl.mazovia.offroad.terrain.elevation.ElevationSample
+import pl.mazovia.offroad.terrain.elevation.ElevationSampler
+import pl.mazovia.offroad.terrain.elevation.ElevationSourceMetadata
+import pl.mazovia.offroad.terrain.elevation.GeoBounds
+import pl.mazovia.offroad.terrain.elevation.UnavailableReason
+import pl.mazovia.offroad.terrain.geo.LocalFrame
 import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
 import pl.mazovia.offroad.terrain.presentation.CorridorRoute
+import pl.mazovia.offroad.terrain.presentation.TerrainGrid
 import pl.mazovia.offroad.terrain.profile.FilteredElevationProfile
 import pl.mazovia.offroad.terrain.profile.GradeEventDetector
 import pl.mazovia.offroad.terrain.profile.GradeProfile
@@ -43,7 +50,11 @@ import pl.mazovia.offroad.terrain.profile.RawElevationProfile
 import pl.mazovia.offroad.terrain.projection.RouteIndex
 import java.io.File
 import kotlin.math.PI
+import kotlin.math.abs
 import kotlin.math.cos
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
 import kotlin.math.sin
 
 /**
@@ -94,13 +105,17 @@ class RoadAheadCorridorDeviceTest {
         100.0 + sections.sumOf { (from, to, g) -> g * (s.coerceIn(from, to) - from) }
 
     private var scene by mutableStateOf<TerrainInstrumentModel>(TerrainInstrumentModel.NoRoute)
+    private var sceneGrid by mutableStateOf<TerrainGrid?>(null)
     private var composed = false
 
-    private fun shoot(name: String, model: TerrainInstrumentModel) {
+    private fun shoot(name: String, model: TerrainInstrumentModel, grid: TerrainGrid? = null): Bitmap {
         scene = model
+        sceneGrid = grid
         if (!composed) {
             composed = true
-            rule.setContent { RoadAheadCorridor(scene, Modifier.fillMaxWidth().height(400.dp).testTag("shot")) }
+            rule.setContent {
+                RoadAheadCorridor(scene, Modifier.fillMaxWidth().height(400.dp).testTag("shot"), grid = sceneGrid)
+            }
         }
         rule.waitForIdle()
         val bitmap = rule.onNodeWithTag("shot").captureToImage().asAndroidBitmap()
@@ -108,7 +123,23 @@ class RoadAheadCorridorDeviceTest {
             "corridor-shots").apply { mkdirs() }
         File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
         Log.i("TerrainCorridorTest", "saved $name.png ${bitmap.width}x${bitmap.height}")
+        return bitmap
     }
+
+    /** Synthetic DEM: [height] of (east, north) metres from [origin]; null = unavailable (NODATA). */
+    private inner class Dem(private val height: (Double, Double) -> Double?) : ElevationSampler {
+        private val frame = LocalFrame(origin)
+        override val metadata = ElevationSourceMetadata("test", 3.0, "test", "synthetic corridor test surface")
+        override fun sample(latitude: Double, longitude: Double): ElevationSample {
+            val p = GeoPoint(latitude, longitude)
+            return height(frame.eastM(p), frame.northM(p))?.let { ElevationSample.Value(it) }
+                ?: ElevationSample.Unavailable(UnavailableReason.NODATA)
+        }
+        override suspend fun prefetch(bounds: GeoBounds) = Unit
+    }
+
+    private fun grid(c: CorridorGeometry, dem: (Double, Double) -> Double?): TerrainGrid =
+        TerrainGrid.sample(c, Dem(dem))!!.also { assertTrue(it.fits(c)) }
 
     @Test fun scriptedScenes() {
         val straight = route("straight", listOf(segment(path(1200.0) { it to 0.0 })))
@@ -143,7 +174,46 @@ class RoadAheadCorridorDeviceTest {
         shoot("09_no_elevation", TerrainInstrumentModel.NoData(false, false, 30.0, noHeights))
     }
 
-    @Test fun drawTimeOverAnimatedFrames() {
+    /** DESIGN §22.5 C3 grid scenes (TA-007C). */
+    @Test fun gridScenes() {
+        // Valley across the route with a side slope; the route profile is the DEM along the route axis.
+        val valley: (Double, Double) -> Double = { e, n -> 100.0 + 0.06 * abs(e - 400.0) * 0.5 + 0.08 * n }
+        val straight = route("straight", listOf(segment(path(1200.0) { it to 0.0 })))
+        val full = corridor(straight, 30.0) { valley(it, 0.0) }
+        val fullGrid = grid(full, valley)
+        assertEquals(0, fullGrid.stats.cellsDropped)
+        shoot("10_grid_full", valid(full, 30.0), fullGrid)
+
+        // No DEM within 60 m of a point 180 m ahead, 90 m left: a hole, never a 0 m pit.
+        val holed: (Double, Double) -> Double? = { e, n -> if (hypot(e - 210.0, n - 90.0) < 60.0) null else valley(e, n) }
+        val holedGrid = grid(full, holed)
+        assertTrue(holedGrid.stats.cellsDropped > 0)
+        shoot("11_grid_hole", valid(full, 30.0), holedGrid)
+
+        // Crest 150 m ahead, then a descent and a left turn beyond it: the hidden route is a translucent line.
+        val crest: (Double, Double) -> Double = { e, _ -> 100.0 + 0.08 * min(e, 180.0) - 0.08 * (e - 180.0).coerceIn(0.0, 300.0) }
+        val turnPoints = path(300.0) { it to 0.0 } + path(600.0) { 300.0 to it }.drop(1)
+        val turn = route("turn90", listOf(segment(turnPoints)),
+            maneuvers = listOf(Maneuver(geo(300.0, 0.0), ManeuverType.TURN_LEFT, 300.0)))
+        val beyond = corridor(turn, 30.0) { s -> crest(min(s, 300.0), max(0.0, s - 300.0)) }
+        shoot("12_grid_crest_turn", valid(beyond, 30.0, "8 %"), grid(beyond, crest))
+
+        // Grid disabled / not fitting (another route's grid): pixel-identical to the TA-007B corridor.
+        val plain = shoot("13_grid_off", valid(full, 30.0))
+        val foreign = shoot("13_grid_foreign", valid(full, 30.0), grid(beyond, crest))
+        assertTrue("a grid that does not fit must not be drawn", plain.sameAs(foreign))
+
+        // Off route and route change: the grid is greyed with the frozen corridor.
+        shoot("14_grid_off_route", TerrainInstrumentModel.Detached(42.0, 30.0, full), fullGrid)
+        shoot("15_grid_reloading", TerrainInstrumentModel.Reloading(30.0, full), fullGrid)
+    }
+
+    @Test fun drawTimeOverAnimatedFrames() = benchmark(withGrid = false)
+
+    /** C3: the same animation with the terrain grid, rebuilt (sampled from a synthetic DEM) with every window. */
+    @Test fun drawTimeOverAnimatedFramesWithGrid() = benchmark(withGrid = true)
+
+    private fun benchmark(withGrid: Boolean) {
         val route = route("bench", listOf(segment(path(3000.0) { s -> s to 80.0 * sin(2 * PI * s / 700.0) })),
             maneuvers = listOf(Maneuver(geo(900.0, 80.0 * sin(2 * PI * 900.0 / 700.0)), ManeuverType.TURN_RIGHT, 900.0)))
         val index = RouteIndex.build(route)
@@ -153,31 +223,60 @@ class RoadAheadCorridorDeviceTest {
         val display = pl.mazovia.offroad.terrain.profile.DisplayElevationProfile.from(grade.filtered)
         val events = GradeEventDetector().detect(grade)
         val data = CorridorRoute.build(route, index)
+        // Hills matching the profile's wavelength plus a side slope (grid only).
+        val dem = Dem { e, n -> 100.0 + 12.0 * sin(2 * PI * e / 500.0) + 0.05 * n }
+        val buildNanos = ArrayList<Long>()
+        fun gridFor(c: CorridorGeometry): TerrainGrid? {
+            if (!withGrid) return null
+            val started = System.nanoTime()
+            return TerrainGrid.sample(c, dem).also { buildNanos += System.nanoTime() - started }
+        }
         val times = java.util.Collections.synchronizedList(ArrayList<Long>())
         val frames = 360
         var rider by mutableStateOf(50.0)
         var geometry by mutableStateOf(CorridorGeometry.build(data, display, events, 50.0)!!)
+        var terrain by mutableStateOf(gridFor(geometry))
         rule.setContent {
             RoadAheadCorridor(valid(geometry, rider, "4 %", "PODJAZD 6 % za 120 m · 90 m"),
-                Modifier.fillMaxWidth().height(400.dp), onDrawNanos = { times += it })
+                Modifier.fillMaxWidth().height(400.dp), onDrawNanos = { times += it }, grid = terrain)
         }
         rule.waitUntil(5_000) { times.isNotEmpty() }
-        // One rider step per drawn frame (≈ 12 m/s at 30 fps); the window is rebuilt as in TerrainPane.
+        // One rider step per drawn frame (≈ 12 m/s at 30 fps); the window is rebuilt as in TerrainPane. The grid
+        // build runs here on the test thread (TerrainPane builds it on Default), so it never counts as draw time.
         repeat(frames) {
             val before = times.size
+            var next: CorridorGeometry? = null
             rule.runOnIdle {
                 rider += 0.4
                 if (!geometry.covers(rider, index.totalLengthM)) {
-                    geometry = CorridorGeometry.build(data, display, events, rider)!!
+                    next = CorridorGeometry.build(data, display, events, rider)!!
+                    geometry = next!!
                 }
             }
+            next?.let { c -> gridFor(c).let { rule.runOnIdle { terrain = it } } }
             rule.waitUntil(2_000) { times.size > before }
         }
         val warm = times.drop(30).sorted()
         val p50 = warm[warm.size / 2] / 1e6
         val p95 = warm[(warm.size * 95) / 100] / 1e6
         val max = warm.last() / 1e6
-        Log.i("TerrainCorridorTest", "draw ms over ${warm.size} frames: p50=%.2f p95=%.2f max=%.2f".format(p50, p95, max))
+        val label = if (withGrid) "draw ms with grid" else "draw ms"
+        Log.i("TerrainCorridorTest", "$label over ${warm.size} frames: p50=%.2f p95=%.2f max=%.2f".format(p50, p95, max))
+        if (withGrid) {
+            val builds = buildNanos.sorted()
+            Log.i("TerrainCorridorTest", "grid sample ms over ${builds.size} builds: p50=%.2f p95=%.2f max=%.2f, %d cells".format(
+                builds[builds.size / 2] / 1e6, builds[(builds.size * 95) / 100] / 1e6, builds.last() / 1e6,
+                terrain?.cellCount ?: 0))
+            assertTrue(terrain != null && terrain!!.cellCount > 0)
+            // Steady state: the same window sampled repeatedly (a ride rebuilds every 30 m, so the code stays warm).
+            val warmBuilds = (0 until 40).map {
+                val started = System.nanoTime()
+                TerrainGrid.sample(geometry, dem)
+                System.nanoTime() - started
+            }.drop(10).sorted()
+            Log.i("TerrainCorridorTest", "grid sample ms warm over ${warmBuilds.size} builds: p50=%.2f p95=%.2f".format(
+                warmBuilds[warmBuilds.size / 2] / 1e6, warmBuilds[(warmBuilds.size * 95) / 100] / 1e6))
+        }
         assertEquals(true, warm.size >= frames - 30)
     }
 }

@@ -1,5 +1,6 @@
 package pl.mazovia.offroad.terrain.presentation
 
+import pl.mazovia.offroad.domain.model.GeoPoint
 import pl.mazovia.offroad.domain.model.ManeuverType
 import pl.mazovia.offroad.domain.model.Route
 import pl.mazovia.offroad.domain.model.RouteSource
@@ -107,6 +108,10 @@ class CorridorGeometry private constructor(
     val exaggeration: Float,
     /** `s` of the ENU origin (the rider's position when built). */
     val anchorM: Double,
+    /** Geographic ENU origin (the route point at [anchorM]): scene plan coordinates are metres east/north of it. */
+    val origin: GeoPoint,
+    /** Display height (profile datum, metres) that scene height 0 stands for; NaN when [hasHeights] is false. */
+    val baseDisplayM: Double,
     private val distance: DoubleArray,
     private val east: FloatArray,
     private val north: FloatArray,
@@ -254,6 +259,8 @@ class CorridorGeometry private constructor(
                 display = display,
                 exaggeration = exaggeration,
                 anchorM = anchor,
+                origin = origin.projected,
+                baseDisplayM = if (hasHeights) base else Double.NaN,
                 distance = grid.toDoubleArray(),
                 east = east,
                 north = north,

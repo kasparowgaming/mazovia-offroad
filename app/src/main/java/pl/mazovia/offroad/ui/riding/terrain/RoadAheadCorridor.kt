@@ -45,10 +45,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.delay
 import pl.mazovia.offroad.domain.model.ManeuverType
 import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
 import pl.mazovia.offroad.terrain.presentation.GradeBand
 import pl.mazovia.offroad.terrain.presentation.SurfaceBand
+import pl.mazovia.offroad.terrain.presentation.TerrainGrid
 import pl.mazovia.offroad.terrain.profile.GradeEventType
 import kotlin.math.abs
 import kotlin.math.floor
@@ -76,6 +78,12 @@ object CorridorTargets {
     const val GATE_LABEL_MAX_M = 400.0
     const val FOG_START_M = 120.0
     const val FOG_END_M = 640.0
+    /** C3 grid: route segments hidden behind a crest are drawn over the terrain with this opacity. */
+    const val CREST_ROUTE_ALPHA = 0.55f
+    /** Grid cells whose centre lies farther than this behind the near plane cannot reach the view. */
+    const val GRID_BEHIND_M = 30f
+    /** §16.1 route changed: the "ładowanie" label appears only when the frozen view lasts longer than this. */
+    const val RELOAD_LABEL_DELAY_MS = 1000L
 }
 
 /**
@@ -191,6 +199,8 @@ private object CorridorColors {
     val routeOutline = Color(0xFF06141B)
     val post = Color(0xFFE6EBEF)
     val sign = Color(0xFF0E2A36)
+    /** C3 terrain grid base colour, scaled by the cell light. */
+    val terrain = Color(0xFF4F7A55)
 
     fun surface(band: SurfaceBand): Color = when (band) {
         SurfaceBand.PAVED -> Color(0xFF50565E)
@@ -307,6 +317,8 @@ private class TriangleBatch {
  * Painter's order far → near per ~3 m segment (DESIGN §3.7). Two passes: (1) ground shoulders and ribbon for every
  * segment, so nearer terrain covers what lies behind a crest; (2) ribbon and lines again, then objects, for segments not hidden
  * behind a crest, so a nearer segment's wide shoulder never covers the road beyond a bend.
+ * With a C3 terrain grid (DESIGN §0.3) the grid is drawn first as the ground, far → near by cell depth; pass 1 is then
+ * replaced by a translucent route line for the segments behind a crest, and pass 2 follows unchanged.
  */
 private class CorridorPainter(private val textMeasurer: TextMeasurer, logTimes: Boolean) {
     private var normalsFor: CorridorGeometry? = null
@@ -339,6 +351,14 @@ private class CorridorPainter(private val textMeasurer: TextMeasurer, logTimes: 
     private val tagPad = FloatArray(MAX_TAGS)
     private val tagDrawn = BooleanArray(MAX_TAGS)
     private var tagCount = 0
+    // C3 grid nodes in the scene frame of [gridGeometry] (the grid may come from an earlier window of the same profile).
+    private var gridFor: TerrainGrid? = null
+    private var gridGeometry: CorridorGeometry? = null
+    private var gx = FloatArray(0)
+    private var gy = FloatArray(0)
+    private var gz = FloatArray(0)
+    /** Cells sorted far → near: (inverted depth bits << 32) | cell. */
+    private var order = LongArray(0)
 
     private companion object {
         /** Clip plane offset in front of the near plane (float rounding margin). */
@@ -370,6 +390,54 @@ private class CorridorPainter(private val textMeasurer: TextMeasurer, logTimes: 
             // Left normal of the travel direction.
             nx[i] = -dy / len
             ny[i] = dx / len
+        }
+    }
+
+    /** Places [grid]'s nodes in [g]'s scene frame ([TerrainGrid.placeIn]). Once per (grid, window) pair. */
+    private fun prepareGrid(grid: TerrainGrid, g: CorridorGeometry) {
+        if (gridFor === grid && gridGeometry === g) return
+        val n = grid.nodeCount
+        if (gx.size < n) { gx = FloatArray(n); gy = FloatArray(n); gz = FloatArray(n) }
+        if (order.size < grid.cellCount) order = LongArray(grid.cellCount)
+        grid.placeIn(g, gx, gy, gz)
+        gridFor = grid
+        gridGeometry = g
+    }
+
+    /** C3 terrain grid, far → near by the camera depth of each cell centre (painter's algorithm, no depth test). */
+    private fun DrawScope.grid(camera: CorridorCamera, grid: TerrainGrid, greyed: Boolean) {
+        val cols = grid.cols
+        var n = 0
+        for (k in 0 until grid.cellCount) {
+            val a = grid.cellNode(k)
+            val d = a + cols + 1
+            val depth = camera.depth((gx[a] + gx[d]) * 0.5f, (gy[a] + gy[d]) * 0.5f, (gz[a] + gz[d]) * 0.5f)
+            if (depth < CorridorTargets.NEAR_M - CorridorTargets.GRID_BEHIND_M) continue
+            // Non-negative float bits order like ints; far first = ascending on the inverted key.
+            val key = java.lang.Float.floatToRawIntBits(max(depth, 0f)).toLong()
+            order[n++] = ((Int.MAX_VALUE.toLong() - key) shl 32) or k.toLong()
+        }
+        java.util.Arrays.sort(order, 0, n)
+        val range = (CorridorTargets.FOG_END_M - CorridorTargets.FOG_START_M).toFloat()
+        val terrain = CorridorColors.terrain
+        for (m in 0 until n) {
+            val k = (order[m] and 0xFFFFFFFFL).toInt()
+            val a = grid.cellNode(k)
+            val b = a + 1
+            val c = a + cols
+            val d = c + 1
+            // Quad a → b → d → c.
+            p[0] = gx[a]; p[1] = gy[a]; p[2] = gz[a]
+            p[3] = gx[b]; p[4] = gy[b]; p[5] = gz[b]
+            p[6] = gx[d]; p[7] = gy[d]; p[8] = gz[d]
+            p[9] = gx[c]; p[10] = gy[c]; p[11] = gz[c]
+            val ex = (gx[a] + gx[d]) * 0.5f - camera.eyeX
+            val ey = (gy[a] + gy[d]) * 0.5f - camera.eyeY
+            val fog = ((sqrt(ex * ex + ey * ey) - CorridorTargets.FOG_START_M.toFloat()) / range).coerceIn(0f, 1f)
+            val l = grid.lightAt(k)
+            val lit = Color((terrain.red * l).coerceIn(0f, 1f), (terrain.green * l).coerceIn(0f, 1f),
+                (terrain.blue * l).coerceIn(0f, 1f))
+            polygon(camera, 4, tone(lit, fog, greyed))
         }
     }
 
@@ -463,9 +531,10 @@ private class CorridorPainter(private val textMeasurer: TextMeasurer, logTimes: 
         p[9] = g.eastAt(i) - nx[i] * half; p[10] = g.northAt(i) - ny[i] * half; p[11] = zi
     }
 
-    fun DrawScope.draw(g: CorridorGeometry, riderM: Double, greyed: Boolean) {
+    fun DrawScope.draw(g: CorridorGeometry, riderM: Double, greyed: Boolean, grid: TerrainGrid? = null) {
         val camera = CorridorCamera.chase(g, riderM, size.width, size.height) ?: return
         prepare(g)
+        val terrainGrid = grid?.takeIf { it.fits(g) }?.also { prepareGrid(it, g) }
         tagCount = 0
         val n = g.size
         val first = max(0, g.indexAtOrBefore(riderM - CorridorGeometry.BEHIND_M))
@@ -479,6 +548,13 @@ private class CorridorPainter(private val textMeasurer: TextMeasurer, logTimes: 
             // Far ground beyond the shoulder bands (inside bends, past the window): ground colour deep in fog.
             drawRect(tone(CorridorColors.ground, 0.75f, greyed), topLeft = Offset(0f, max(0f, horizon)),
                 size = Size(size.width, size.height - max(0f, horizon)))
+        }
+
+        if (terrainGrid != null) {
+            batching = useBatch
+            grid(camera, terrainGrid, greyed)
+            flush()
+            batching = false
         }
 
         // Crest visibility from the centre line: walking away from the rider, a point that projects below the highest
@@ -499,9 +575,21 @@ private class CorridorPainter(private val textMeasurer: TextMeasurer, logTimes: 
         val half = CorridorTargets.ROAD_WIDTH_M / 2f
         val edgeWidth = 2.dp.toPx()
         val routeWidth = 3.dp.toPx()
-        // Pass 1: ground and ribbon, far → near.
         batching = useBatch
-        for (i in last - 1 downTo first) {
+        if (terrainGrid != null) {
+            // Pass 1 with the grid (the grid is the ground): the route behind a crest, which the terrain hides, as a
+            // translucent line over the grid, so a turn beyond a crest stays visible (DESIGN §0.3).
+            val lift = CorridorTargets.RIBBON_LIFT_M
+            for (i in last - 1 downTo first) {
+                val j = i + 1
+                if (g.isBreakBefore(j) || (visible[i] && visible[j])) continue
+                line(camera, g.eastAt(i), g.northAt(i), g.sceneHeightAt(i) + lift, g.eastAt(j), g.northAt(j),
+                    g.sceneHeightAt(j) + lift, tone(CorridorColors.route, fogT(g, i, riderM), greyed)
+                        .copy(alpha = CorridorTargets.CREST_ROUTE_ALPHA), routeWidth)
+            }
+        }
+        // Pass 1 without the grid: ground and ribbon, far → near.
+        if (terrainGrid == null) for (i in last - 1 downTo first) {
             val j = i + 1
             if (g.isBreakBefore(j)) continue
             val fog = fogT(g, i, riderM)
@@ -724,7 +812,9 @@ fun RoadAheadCorridor(
     modifier: Modifier = Modifier,
     onFailure: (String) -> Unit = {},
     /** Receives each projection + draw duration in nanoseconds (DESIGN §21 D column measurement). */
-    onDrawNanos: ((Long) -> Unit)? = null
+    onDrawNanos: ((Long) -> Unit)? = null,
+    /** C3 terrain grid; drawn only when it fits the shown corridor, otherwise the TA-007B corridor alone. */
+    grid: TerrainGrid? = null
 ) {
     val status = when (model) {
         TerrainInstrumentModel.NoRoute -> "Teren: brak trasy"
@@ -732,12 +822,19 @@ fun RoadAheadCorridor(
         is TerrainInstrumentModel.Detached -> "Teren: poza trasą"
         is TerrainInstrumentModel.NoData -> "Teren: brak danych"
         is TerrainInstrumentModel.Valid -> "Teren: dane"
+        is TerrainInstrumentModel.Reloading -> "Teren: ładowanie"
     }
-    val (corridor, riderM) = when (model) {
-        is TerrainInstrumentModel.Valid -> model.corridor to model.riderM
-        is TerrainInstrumentModel.Detached -> model.corridor to model.riderM
-        is TerrainInstrumentModel.NoData -> model.corridor to model.riderM
-        else -> null to null
+    val corridor = model.shownCorridor
+    val riderM = model.shownRiderM
+    // §16.1 route changed: the frozen view gets its "ładowanie" label only after RELOAD_LABEL_DELAY_MS.
+    val reloading = model is TerrainInstrumentModel.Reloading
+    var reloadLabel by remember { mutableStateOf(false) }
+    LaunchedEffect(reloading) {
+        reloadLabel = false
+        if (reloading) {
+            delay(CorridorTargets.RELOAD_LABEL_DELAY_MS)
+            reloadLabel = true
+        }
     }
     val textMeasurer = rememberTextMeasurer()
     val debuggable = LocalContext.current.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
@@ -749,11 +846,11 @@ fun RoadAheadCorridor(
     Box(modifier.background(CorridorColors.fog).testTag("terrain_instrument")
         .semantics { contentDescription = status }) {
         if (corridor != null && riderM != null && failed == null) {
-            val greyed = model is TerrainInstrumentModel.Detached
+            val greyed = model is TerrainInstrumentModel.Detached || reloading
             Canvas(Modifier.fillMaxSize().testTag("terrain_distance")) {
                 val started = SystemClock.elapsedRealtimeNanos()
                 try {
-                    with(painter) { draw(corridor, riderM, greyed) }
+                    with(painter) { draw(corridor, riderM, greyed, grid) }
                 } catch (e: Exception) {
                     Log.w("TerrainCorridor", "corridor draw failed", e)
                     failed = "Teren niedostępny"
@@ -789,12 +886,15 @@ fun RoadAheadCorridor(
                     is TerrainInstrumentModel.Detached -> "POZA TRASĄ" +
                         (model.distanceToRouteM?.let { " · ${it.toInt()} m" } ?: "")
                     is TerrainInstrumentModel.NoData -> "BRAK DANYCH WYSOKOŚCI"
+                    is TerrainInstrumentModel.Reloading -> if (reloadLabel) "ŁADOWANIE" else ""
                     else -> ""
                 }
                 // Over a corridor the state label sits at the top so the road stays visible.
                 val placement = if (corridor != null) Alignment.TopCenter else Alignment.Center
-                Text(label, Modifier.align(placement).padding(12.dp).then(hudStyle), color = Color.White,
-                    fontSize = if (corridor != null) 20.sp else 26.sp, fontWeight = FontWeight.Bold)
+                if (label.isNotEmpty()) {
+                    Text(label, Modifier.align(placement).padding(12.dp).then(hudStyle), color = Color.White,
+                        fontSize = if (corridor != null) 20.sp else 26.sp, fontWeight = FontWeight.Bold)
+                }
                 if (model is TerrainInstrumentModel.NoData && model.showStaleIndicator) {
                     Text("POZYCJA NIEAKTUALNA", Modifier.align(Alignment.BottomCenter).padding(12.dp).then(hudStyle),
                         color = Color.Yellow)

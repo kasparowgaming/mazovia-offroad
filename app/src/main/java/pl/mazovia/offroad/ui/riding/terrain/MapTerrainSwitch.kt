@@ -25,11 +25,13 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.distinctUntilChangedBy
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import android.util.Log
 import pl.mazovia.offroad.terrain.presentation.CorridorGeometry
+import pl.mazovia.offroad.terrain.presentation.TerrainGrid
 import pl.mazovia.offroad.terrain.profile.RouteTerrainProfile
 import pl.mazovia.offroad.terrainsource.TerrainProfileSession
 import kotlin.math.max
@@ -112,12 +114,19 @@ fun TerrainPane(
     // collector below. This adapter only passes the request along; route progress stays in the presenter.
     var request by remember { mutableStateOf(presenter?.profileRequest) }
     var profile by remember { mutableStateOf<RouteTerrainProfile?>(null) }
+    /** Route whose profile build has finished (with or without a profile); differs from the request while loading. */
+    var builtFor by remember { mutableStateOf<String?>(null) }
     LaunchedEffect(session) {
         snapshotFlow { request }.distinctUntilChangedBy { it?.routeId }.collectLatest { next ->
             profile = null
             profile = next?.let { session.build(it) }
+            builtFor = next?.routeId
         }
     }
+    // C3 terrain grid: built off the main thread for each corridor window the view shows; the last grid stays drawn
+    // (placed in the new window's frame) until the next one is ready, and a failed build clears it, leaving the
+    // TA-007B corridor (DESIGN §0.3).
+    var grid by remember { mutableStateOf<TerrainGrid?>(null) }
     val currentState by rememberUpdatedState(state)
     val currentOnNoRoute by rememberUpdatedState(onNoRoute)
     var model by remember { mutableStateOf<TerrainInstrumentModel>(TerrainInstrumentModel.NoRoute) }
@@ -140,7 +149,7 @@ fun TerrainPane(
         // duplicate emission, which would refresh the freshness clock).
         var fed: NavigationState? = null
         try {
-            snapshotFlow { currentState to profile }.collectLatest { (incoming, loaded) ->
+            snapshotFlow { Triple(currentState, profile, builtFor) }.collectLatest { (incoming, loaded, built) ->
                 // Projection (and the route index build on a new route) runs off the main thread (DESIGN §17.1);
                 // calls stay sequential within this coroutine, so the presenter remains single-threaded.
                 var current = withContext(Dispatchers.Default) {
@@ -148,8 +157,11 @@ fun TerrainPane(
                     if (incoming === fed) presenter.frame(now())
                     else presenter.onNavigationState(incoming, now()).also { fed = incoming }
                 }
-                request = presenter.profileRequest
-                model = terrainInstrumentModel(current, corridorFor(current))
+                val requested = presenter.profileRequest
+                request = requested
+                // The requested route's profile is still being built (§16.1 route changed).
+                val reloading = requested != null && requested.routeId != built
+                model = reloadingModel(model, terrainInstrumentModel(current, corridorFor(current)), reloading)
                 if (current.mode == TerrainVisualMode.IDLE) { currentOnNoRoute(); return@collectLatest }
                 while (true) {
                     if (current.needsAnimation) {
@@ -159,7 +171,7 @@ fun TerrainPane(
                         delay(max(1L, (due - now()) / 1_000_000L))
                     }
                     current = presenter.frame(now())
-                    model = terrainInstrumentModel(current, corridorFor(current))
+                    model = reloadingModel(model, terrainInstrumentModel(current, corridorFor(current)), reloading)
                 }
             }
         } catch (cancelled: CancellationException) {
@@ -169,5 +181,10 @@ fun TerrainPane(
             onFailure("Teren niedostępny")
         }
     }
-    RoadAheadCorridor(model, modifier, onFailure)
+    LaunchedEffect(session) {
+        snapshotFlow { model.shownCorridor }.distinctUntilChanged().collectLatest { corridor ->
+            if (corridor != null && TerrainGrid.canBuild(corridor)) grid = session.buildGrid(corridor)
+        }
+    }
+    RoadAheadCorridor(model, modifier, onFailure, grid = grid)
 }
