@@ -65,13 +65,43 @@ Only this file changed.
 - Sections touched: §1, §3.5 (superseded note), §3.7 (new), §13, §14, §15.1, §15.6, §16.1 (note), §17.1, §19.2, §21, §22.5,
   §22.6, §23, §24, §25.4, §26, §27, §29.
 
+### 0.3 TA-000B-C3 — shaded terrain grid added to V1 (Option D + grid)
+
+Operator decision 2026-09-27. Pre-change `DESIGN.md` blob `0fcb5b9e4c87654059818335faf4d1d956399016`. Only this file changed.
+
+- **Why:** the corridor alone reads as a road in empty space; the operator wants the hop.earth-like landform around it.
+  A Canvas mock-up on the S25 with real T7 DEM (none / wireframe / shaded) was reviewed; the operator chose **shaded**.
+  MEASURED on S25: draw p95 ≤ 8.9 ms, grid prep p95 ≤ 5.4 ms, a frame with a rebuild on the UI thread 7–21 ms,
+  ±200 m band fully covered on all 7 transects.
+- **V1 = Option D + shaded terrain grid (§3.7):** a fixed geographic lattice, 25 m step, sampled with the same
+  `ElevationSampler` within ±200 m of the corridor window `[s − 20 m, s + 600 m]`, same vertical exaggeration as the
+  corridor, shaded quads with distance fog, painter's order far → near, Compose Canvas. The grid is built off the UI
+  thread (`Default`); the UI thread only projects and draws.
+- **Route beyond a crest:** segments hidden behind a crest of the route centre line are drawn as a dashed / translucent
+  route line over the grid (no depth buffer; terrain beside the route never hides the road).
+- **Invariants:** grid heights are render-only — they never feed Raw/Filtered/Grade profiles or `GradeEventDetector`;
+  no §14.5 terrain-to-road blending in V1 (the ribbon keeps following `DisplayElevationProfile`, the offset against
+  the grid is accepted and logged); an unavailable node leaves a hole (cells touching it are dropped), never 0 m;
+  a grid failure degrades to the TA-007B corridor without a grid, never to MAP breakage.
+- **Still not in V1 (G-3D / backlog):** GPU mesh or 3D engine, land cover, forests, buildings, side roads, imagery.
+  Option A remains behind G-3D, now compared against D + grid.
+- **Known limitations:** on a descent beyond a crest the terrain hides the drop; holes where DEM coverage ends;
+  lateral coverage of the full Mazowsze archive unverified (TA-008, OD-8 500 m corridor ≥ ±200 m band).
+- **Open decisions closed with C3:** a coverage gap on the ribbon is the outlined grey "brak danych" span of §3.7 (not a
+  surface colour; §16.1 aligned); after a reroute the corridor stays frozen and greyed until the first window of the new
+  route, with a "ładowanie" label only if that takes longer than 1 s (§16.1).
+- Sections touched: §1, §3.7, §14 (heading note), §16.1 (D note, route-changed row), §17.1, §21 (D column), §22.5,
+  §23 (TA-007C), §24 (NEW), §26 (OD-1/OD-2/OD-8), §27 (item 14), §29.
+
 ---
 
 ## 1. Executive decision
 
 1. **V1 visual mode — DECIDED (TA-000B-C2, 2026-09-27): Option D "road-ahead corridor"** (§3.7): next 600 m of the route's
    real geometry in perspective from a chase camera, surface-coloured road ribbon, grade-coloured edges, maneuver sign, distance
-   gates, rendered with Compose Canvas. The original TA-000B recommendation was Option C (profile strip); it is superseded.
+   gates, rendered with Compose Canvas. **TA-000B-C3 (§0.3):** plus a shaded terrain grid (25 m, ±200 m around the corridor
+   window), still Compose Canvas, no GPU mesh or 3D engine. The original TA-000B recommendation was Option C (profile strip);
+   it is superseded.
    **True 3D with a terrain mesh (Option A) is not abandoned**: it stays behind gate **G-3D** (glance test + renderer spike) and
    becomes V1.1/V2 only if it measurably beats Option D (§26 OD-1, OD-2).
 2. **The renderer-independent terrain core is built first and serves A and C**: `TerrainRouteProjection` → `ElevationSampler` →
@@ -254,7 +284,8 @@ Geometry (TARGETS unless stated; tuned in TA-007B on the S25):
   ≈ 1.05 × view width; pose driven by `sDisplay` (§15.2), heading implied by the route (no separate GPS heading while ATTACHED).
 - **Road ribbon:** 4.8 m visual width, colour by `RouteSegment.surface` band (UNKNOWN / GPX → neutral grey "nieznana", C7); cyan
   active-route centre line (§14.6 contrast rule); white edges, recoloured on `GradeEventDetector` spans (climb / steep / descent).
-- **Context:** flat shoulder bands ±26 m shaded by grade (visual cue, not terrain); distance gates every 100 m labelled up to
+- **Context:** flat shoulder bands ±26 m shaded by grade (visual cue, not terrain; skipped where the C3 terrain grid is drawn);
+  distance gates every 100 m labelled up to
   400 m; delineator posts every 25 m; distance fog from 120 m to 640 m.
 - **Overlays in the scene:** next maneuver sign above the maneuver point with distance; grade-event flag at event start; surface
   change sign at band boundaries; rider chevron on the road.
@@ -263,8 +294,17 @@ Geometry (TARGETS unless stated; tuned in TA-007B on the S25):
   (visibly marked, never 0 m); no grade colouring and no event across the gap.
 - **Rendering:** CPU projection + painter's order (far → near per ~3 m segment, ≈ 200–250 segments), Compose Canvas; no new
   native dependency. Crest occlusion follows from painter's order.
-- **Not in V1:** terrain mesh (Option A, G-3D), side roads at junctions (need OSM junction data that the frozen `Route` does not
-  carry, §27), land-cover colouring, buildings, imagery.
+- **Terrain grid (TA-000B-C3, §0.3):** fixed geographic lattice with a 25 m step (a node keeps its ground position when the
+  window is rebuilt); nodes within ±200 m of the window polyline `[s − 20 m, s + 600 m]` sampled from `ElevationSampler`;
+  height = (DEM − corridor base) × the corridor's vertical exaggeration; Lambert-shaded quads (fixed light from the south-west,
+  45° up, on the exaggerated normals) with the corridor's distance fog, drawn far → near before the road. Built on `Default` when the window
+  advances; the UI thread only projects and draws. An unavailable node drops every cell touching it (hole, never 0 m). The
+  ribbon, edges, route line and overlays are drawn on top; route segments behind a crest of the route centre line are drawn
+  as a dashed / translucent route line over the grid. Grid heights are render-only (never feed profiles or events); no
+  §14.5 blending. Known limitation: no depth test — terrain beside the route never hides the road, and on a descent beyond a
+  crest the terrain hides the drop. A grid failure leaves the corridor without a grid.
+- **Not in V1:** GPU terrain mesh / 3D engine (Option A, G-3D), side roads at junctions (need OSM junction data that the frozen
+  `Route` does not carry, §27), land-cover colouring, forests, buildings, imagery.
 
 Reference mock-up (2026-09-27, synthetic route): https://claude.ai/artifact/RBFYBbJhCEjL9FnBfejdEc (private to the operator).
 Low relief: at ×1 Mazovian climbs are barely visible (INFERRED from the mock-up); exaggeration is the mitigation, bounded by R2.
@@ -1083,7 +1123,7 @@ Spike code lives on a separate branch/module never merged into `main` without a 
 
 ---
 
-## 14. Scene geometry (Option A; C uses §3.3 only; D uses §3.7 plus the §14.4 ribbon rules and §14.6 active-route rules, without terrain chunks or §14.5 blending)
+## 14. Scene geometry (Option A; C uses §3.3 only; D uses §3.7 plus the §14.4 ribbon rules and §14.6 active-route rules, without terrain chunks or §14.5 blending; the C3 grid follows §14.1 narrowed to ±200 m, CPU-built, no GPU chunks)
 
 ### 14.1 Terrain extent
 
@@ -1178,7 +1218,7 @@ calculated routes; gaps render as broken ribbon; no maneuvers (VERIFIED `GpxRout
 | RECOVERED | UNWIRED | build on first emission | init without `sPrev` | normal | — | normal | none |
 | ARRIVED | REACHABLE | none needed | HOLD at end | "cel" end state | — | finish | none |
 | IDLE | REACHABLE (after stop) | release | NO_ROUTE | TERRAIN hidden | MAP | MAP | none |
-| route changed (new `route.id`) | DEFENSIVE (only via unwired `reroute`) | invalidate + rebuild | reset | "ładowanie" ≤ 1 s | — | brief loading | none |
+| route changed (new `route.id`) | REACHABLE (auto-reroute, TASK-NAV-REROUTE-001) | invalidate + rebuild | reset | last view frozen + greyed until the first new window; "ładowanie" only after 1 s (C3) | — | brief greyed view | none |
 | route removed | REACHABLE (`stopNavigation`) | release | NO_ROUTE | TERRAIN hidden | MAP | MAP/post-ride | none |
 | free ride / no route | UNWIRED (C13) | optional ring around GPS (A) / none (C) | NO_ROUTE | "brak trasy" | MAP | MAP | none |
 | GPS lost | REACHABLE | keep | unchanged | freeze + stale indicator §15.5 | — | stale indicator | none |
@@ -1192,6 +1232,10 @@ Option D (V1, TA-000B-C2) follows the C column's semantics row by row, drawn as 
 RECALCULATING → frozen, greyed corridor + reason; FOLLOWING_GPX → grey "nieznana" ribbon, no maneuver signs; DEM tile missing →
 outlined "brak danych" ribbon span (§3.7), surface colours and maneuver sign continue; GPS lost → frozen pose + stale indicator;
 renderer failures → identical MAP fallback.
+C3 additions (§0.3): the gap span on the ribbon is the grey "brak danych" of §3.7, never a surface colour (the table's "hatched"
+wording means the same span); DEM tile missing → hole in the terrain grid, corridor continues; grid build failure → corridor
+without the grid (TA-007B look), no MAP fallback needed; route changed → frozen greyed corridor and grid until the new window,
+"ładowanie" label only after 1 s.
 
 ### 16.2 Reachable vs unwired states
 
@@ -1226,6 +1270,7 @@ Terrain handles unwired states defensively only; it does not wire them (§27).
 | Canvas draw (C) | main thread, draw only (no allocation-heavy work) | view-scoped |
 | Corridor window geometry (D): plan + Display heights for `[s − 20, s + 600]` | `Default`, rebuilt when the window advances | view-scoped |
 | Corridor projection + Canvas draw (D) | main thread, per frame; preallocated buffers, no per-frame allocation | view-scoped |
+| Terrain grid build (D + grid, C3): lattice sampling + cell shading for the ±200 m band | `Default`, rebuilt when the window advances; never on the UI thread | view-scoped |
 | Cache eviction | `Default`, on progress events | ride-scoped |
 
 ### 17.2 Cancellation
@@ -1373,6 +1418,8 @@ Device class (TARGET): Android 12+, 4–6 GB RAM, 2021–2023 mid-range SoC with
 | Tile lookup + decode (z15 PNG) | ≤ 15 ms p95, off main thread | same | same |
 | Profile window (2 km) build | ≤ 50 ms | same | same |
 | Corridor window geometry rebuild | — | ≤ 5 ms, background | — |
+| Terrain grid build (C3) | — | ≤ 10 ms p95, background (S25 mock-up MEASURED prep p95 ≤ 5.4 ms) | — |
+| Frame time p95 incl. terrain grid (C3) | — | ≤ 10 ms projection + draw on main thread (S25 mock-up MEASURED ≤ 8.9 ms) | — |
 | Chunk mesh build | — | — | ≤ 8 ms per chunk, background |
 | GPU upload per chunk | — | — | ≤ 2 ms |
 | MAP → TERRAIN | ≤ 300 ms | ≤ 300 ms | ≤ 500 ms warm, ≤ 1 500 ms cold |
@@ -1525,7 +1572,8 @@ with GPS altitude used only as a weak cross-check (ellipsoidal datum, §7.5).
 
 Option C: screenshot tests of the instrument for scripted states. Option D (V1): screenshot tests for scripted poses and states
 (straight, climb, crest with occlusion, 90° turn, S-bends, coverage gap, off-route, stale, GPX); no geometry drawn behind the camera;
-projection unit tests (known pose → known screen points). Option A: visual check that ribbon never intersects terrain in the
+projection unit tests (known pose → known screen points). C3 grid scenes: full coverage, coverage hole (no 0 m, cells dropped),
+crest with a descent beyond it (route line visible over the grid), grid disabled (identical to the TA-007B corridor). Option A: visual check that ribbon never intersects terrain in the
 test scene, no gaps at chunk seams, active route visible in all states.
 
 ### 22.6 One-second glance test
@@ -1645,8 +1693,9 @@ TA-009 → TA-010 (V1); then mock-up glance G-3D → TA-002 → TA-003/004 as V1
 **OPTION D (selected, TA-000B-C2)** — as-built status and order:
 TA-001A → TA-001B (G-DATA) → TA-005(C) → TA-006 (switch + strip, done) → **TA-007** (repurposed by operator 2026-09-26: runtime
 terrain elevation wiring — real archive → profile visible in TEREN; prototype exists, review pending) → **TA-007B** (corridor
-renderer, below) → glance/sunlight UX tuning on the corridor (§22.6–§22.7) → TA-008 (practical Mazowsze coverage + readiness) →
-TA-009 → TA-010 (V1). Then G-3D (A vs D) → TA-002 → TA-003/004 as V1.1/V2.
+renderer, below; done ae90629) → **TA-007C** (shaded terrain grid, TA-000B-C3, below) → glance/sunlight UX tuning on the
+corridor (§22.6–§22.7) → TA-008 (practical Mazowsze coverage + readiness) → TA-009 → TA-010 (V1). Then G-3D (A vs D + grid) →
+TA-002 → TA-003/004 as V1.1/V2.
 
 **TA-007B — Road-ahead corridor renderer (Option D, V1)**
 - GOAL: replace the strip in TEREN with the §3.7 corridor, fed by the same presentation state.
@@ -1660,6 +1709,21 @@ TA-009 → TA-010 (V1). Then G-3D (A vs D) → TA-002 → TA-003/004 as V1.1/V2.
   tests; screenshot/state tests per §22.5 (D).
 - DoD: corridor visible on the physical S25 with a real (non-fixture) profile; §16.1 D states reachable in the simulator; no
   regression in MAP/navigation; draw p95 recorded (§21, D column).
+- STOP: any need to change a frozen class or navigation semantics → OPEN DECISION.
+
+**TA-007C — Shaded terrain grid around the corridor (Option D + grid, V1)**
+- GOAL: draw the §3.7 C3 terrain grid under the corridor in TEREN, with the route beyond a crest as a dashed / translucent line.
+- WHY: operator decision TA-000B-C3 (§0.3); shaded variant chosen from the S25 mock-up.
+- INPUTS: §0.3, §3.7 (terrain grid), §16.1 (C3 additions), §17.1, §21 (D column), §22.5; the uncommitted mock-up in the `ta-007`
+  worktree (`app/src/androidTest/.../ui/riding/terrain/mockup/`: `TerrainGridSampler`, `GridMockupPainter`, `TerrainGridMockupTest`).
+- OUTPUTS: `TerrainGrid` in `:terrain` (pure Kotlin: fixed-lattice sampling of the ±200 m band, NaN holes, cell list, per-cell
+  shading; no Android), grid build on `Default` in the terrain session/presenter, grid pass + beyond-crest route line in
+  `RoadAheadCorridor`, grid-off fallback identical to TA-007B; C3 gap colour and post-reroute "ładowanie" behaviour (§16.1).
+- FROZEN: §24 frozen set; `TerrainSourceBoundaryTest` unchanged; navigation semantics unchanged.
+- TESTS: grid unit tests (lattice stability across rebuilds, band membership, unavailable node → dropped cells, never 0 m, grid
+  heights never reaching profiles/events); screenshot/state tests per §22.5 (C3 scenes).
+- DoD: grid visible on the physical S25 with the real archive; draw p95 and grid build p95 recorded (§21, D column); grid built
+  off the UI thread (no rebuild spike on the UI thread); no regression in MAP/navigation.
 - STOP: any need to change a frozen class or navigation semantics → OPEN DECISION.
 
 ---
@@ -1701,7 +1765,8 @@ TA-009 → TA-010 (V1). Then G-3D (A vs D) → TA-002 → TA-003/004 as V1.1/V2.
 | `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/TerrainPresenter.kt` | :app | collects navigation state, drives projection, maps to UI model, interpolation | :terrain, :designsystem | 005/006 |
 | `app/src/debug/java/pl/mazovia/offroad/debug/NavigationStateReplayer.kt` | :app (debug) | simulator §22.2 | :terrain | 005 |
 | `terrain/src/main/java/pl/mazovia/offroad/terrain/presentation/CorridorGeometry.kt` | :terrain | Option D window geometry: plan points (render-scene ENU) + Display heights + gap/event/surface/maneuver annotations; pure Kotlin | projection, profiles | 007B |
-| `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadCorridor.kt` | :app | Option D Canvas renderer: chase camera, projection, painter's order, overlays, HUD | compose, :terrain | 007B |
+| `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadCorridor.kt` | :app | Option D Canvas renderer: chase camera, projection, painter's order, overlays, HUD; C3 grid pass + beyond-crest route line (007C) | compose, :terrain | 007B/007C |
+| `terrain/src/main/java/pl/mazovia/offroad/terrain/presentation/TerrainGrid.kt` | :terrain | C3 terrain grid: fixed 25 m lattice, ±200 m band around the corridor window, NaN holes, cell list + shading; pure Kotlin (exact file split decided in TA-007C) | elevation, presentation | 007C |
 
 Note (TA-000B-C2): the as-built strip lives at `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadInstrument.kt`
 (not `:designsystem` as planned above); TA-007B retires it from TEREN.
@@ -1794,10 +1859,13 @@ Covered per row above; any risk becoming an issue is recorded in the owning task
 - CONSEQUENCES: A → TA-002/003/004 on the V1 critical path (high risk, highest cost); B → little product value; C → fastest V1,
   core reused, rejected by the operator; D → core reused, Canvas only, renderer rewrite (TA-007B).
 - EVIDENCE: operator review of the C and D mock-ups (2026-09-27); glance test §22.6 on D still required for V1 (§29).
+- TA-000B-C3 (2026-09-27): D extended with a shaded terrain grid (§0.3, §3.7) after the S25 grid mock-up (none / wireframe /
+  shaded); operator chose shaded. Still Compose Canvas; Option A (GPU mesh) unchanged behind G-3D.
 
 **OD-2 Does true 3D remain V1 if D glances better?**
 - OPTIONS: keep A in V1 regardless / A only if it beats D (G-3D) / drop A.
-- RECOMMENDATION: A only via G-3D (A reuses D's camera and corridor geometry, adding a terrain mesh).
+- RECOMMENDATION: A only via G-3D (A reuses D's camera and corridor geometry, adding a GPU terrain mesh); since C3 the
+  comparison baseline is D + shaded grid.
 - CONSEQUENCES: regardless → cost without evidence; G-3D → evidence-driven; drop → loses future differentiation.
 - EVIDENCE: §22.6 results.
 
@@ -1835,7 +1903,8 @@ Covered per row above; any risk becoming an issue is recorded in the owning task
 
 **OD-8 Corridor width for packs**
 - OPTIONS: 500 m / 1 000 m.
-- RECOMMENDATION: 500 m for C and D, 1 000 m if A.
+- RECOMMENDATION: 500 m for C and D, 1 000 m if A. D + grid (C3) needs ±200 m around the route plus lattice/turn margin:
+  500 m (±250 m) is the minimum; confirm lateral coverage in TA-008.
 - EVIDENCE: §9.3–9.4 sizes, TA-008 budget.
 
 ---
@@ -1856,7 +1925,7 @@ Not designed, not fixed here:
 11. Routing graph / map PMTiles build provenance (AUDIT §5 items 3-4).
 12. Corridor (D) side roads at junctions: needs OSM junction geometry outside the frozen `Route` model (separate data source).
 13. Corridor (D) land-cover colouring of shoulders from OSM (forest / field / water).
-14. Terrain mesh under the corridor (Option A) — only via G-3D.
+14. GPU terrain mesh / 3D engine under the corridor (Option A) — only via G-3D (the CPU/Canvas shaded grid is in V1 since C3).
 
 ---
 
@@ -1889,7 +1958,9 @@ All consulted 2026-09-24.
 
 V1 (D-path since TA-000B-C2) is complete when **all** hold (TARGET thresholds, measured per §21.5/§22). The table was written for
 the C-path; for D read "instrument" as "corridor", Visual continuity uses the §21 D frame budget, Battery/thermal is ≤ +5 % (§21.4),
-Missing-data fallback uses the §3.7 gap rendering, and the glance and sunlight tests run on the corridor.
+Missing-data fallback uses the §3.7 gap rendering, and the glance and sunlight tests run on the corridor. Since TA-000B-C3 the
+corridor includes the shaded terrain grid (§3.7): its draw and build budgets (§21, D column) and the C3 scenes (§22.5) are part of
+Visual continuity and Missing-data fallback.
 
 | Area | Criterion |
 |---|---|
