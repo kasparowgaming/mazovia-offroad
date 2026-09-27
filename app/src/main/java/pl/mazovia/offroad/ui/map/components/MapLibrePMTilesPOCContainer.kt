@@ -1,5 +1,6 @@
 package pl.mazovia.offroad.ui.map.components
 
+import android.os.SystemClock
 import android.util.Log
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -97,6 +98,7 @@ fun MapLibrePMTilesPOCContainer(
     
     var lastCenterRequest: Long? by remember { mutableStateOf(null) }
     var lastCameraBearing: Double? by remember { mutableStateOf(null) }
+    val markerMotion = remember { MarkerMotion() }
     
     // Explicit styleReady state to fix race conditions
     var styleReady by remember { mutableStateOf(false) }
@@ -289,16 +291,8 @@ fun MapLibrePMTilesPOCContainer(
                     }
                 }
                 
-                val gpsSource = style.getSource(gpsSourceId) as? GeoJsonSource
-                if (gpsSource != null) {
-                    if (currentPosition != null) {
-                        gpsSource.setGeoJson(Feature.fromGeometry(Point.fromLngLat(currentPosition.longitude, currentPosition.latitude)))
-                        Log.d(TAG, "CURRENT_POSITION_APPLIED")
-                    } else {
-                        gpsSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
-                    }
-                }
-                
+                // The position marker is drawn by the glide effect below, not here.
+
                 val destSource = style.getSource(destSourceId) as? GeoJsonSource
                 if (destSource != null) {
                     if (destination != null) {
@@ -319,11 +313,29 @@ fun MapLibrePMTilesPOCContainer(
         modifier = modifier.onSizeChanged { viewHeightPx = it.height }
     )
 
+    // Glide the position marker between fixes, one source update per frame, only while it moves.
+    LaunchedEffect(currentPosition, styleReady) {
+        markerMotion.update(currentPosition, SystemClock.uptimeMillis())
+        if (!styleReady) return@LaunchedEffect
+        val gpsSource = mapLibreMapRef.value?.style?.getSource(gpsSourceId) as? GeoJsonSource ?: return@LaunchedEffect
+        fun draw(now: Long) {
+            val shown = markerMotion.positionAt(now)
+            if (shown == null) gpsSource.setGeoJson(FeatureCollection.fromFeatures(emptyList()))
+            else gpsSource.setGeoJson(Feature.fromGeometry(Point.fromLngLat(shown.longitude, shown.latitude)))
+        }
+        while (markerMotion.isGliding(SystemClock.uptimeMillis())) {
+            withFrameNanos { }
+            draw(SystemClock.uptimeMillis())
+        }
+        draw(SystemClock.uptimeMillis())
+    }
+
     LaunchedEffect(centerRequest, currentPosition, bearing, isFollowMode, styleReady, padding) {
         if (!styleReady) return@LaunchedEffect
-        
+
         val mapLibreMap = mapLibreMapRef.value ?: return@LaunchedEffect
-        
+        markerMotion.update(currentPosition, SystemClock.uptimeMillis())
+
         if (isFollowMode && currentPosition != null) {
             val centerChanged = lastCenterRequest != centerRequest
             
@@ -363,8 +375,15 @@ fun MapLibrePMTilesPOCContainer(
                 builder.bearing(lastCameraBearing!!)
             }
 
-            mapLibreMap.animateCamera(CameraUpdateFactory.newCameraPosition(builder.build()), 1000)
-            
+            val update = CameraUpdateFactory.newCameraPosition(builder.build())
+            val glideMs = markerMotion.remainingMs(SystemClock.uptimeMillis())
+            if (centerChanged || glideMs <= 0L) {
+                mapLibreMap.animateCamera(update, 1000)
+            } else {
+                // Same linear glide and end time as the marker, so the dot stays on the focal point.
+                mapLibreMap.easeCamera(update, glideMs.toInt(), false)
+            }
+
             lastCenterRequest = centerRequest
         } else if (!isFollowMode && currentPosition != null && lastCenterRequest != centerRequest) {
             mapLibreMap.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(currentPosition.latitude, currentPosition.longitude), 16.0), 1000)
