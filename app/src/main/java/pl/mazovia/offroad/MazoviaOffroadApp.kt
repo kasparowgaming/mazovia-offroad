@@ -80,6 +80,14 @@ class MazoviaOffroadApp : Application() {
 
         // Navigation
         navigationManager = NavigationManager(routingEngine, locationClient)
+        pl.mazovia.offroad.reroute.AutoRerouteController(
+            navigationManager.navigationState,
+            navigationManager::reroute,
+            kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default.limitedParallelism(1)
+            ),
+            { message -> android.util.Log.i("AutoReroute", message) }
+        ).start()
 
         // Notification channels
         createNotificationChannels()

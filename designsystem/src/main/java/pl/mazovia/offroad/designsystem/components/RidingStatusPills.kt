@@ -71,6 +71,20 @@ fun RidingStatusPills(
                         textColor = MazoviaColors.StatusRecRed
                     )
                 }
+                pl.mazovia.offroad.domain.model.NavigationStatus.RECALCULATING -> {
+                    StatusPill(
+                        text = "PRZELICZAM",
+                        dotColor = MazoviaColors.Warning,
+                        textColor = MazoviaColors.Warning
+                    )
+                }
+                pl.mazovia.offroad.domain.model.NavigationStatus.ROUTING_ERROR -> {
+                    StatusPill(
+                        text = "BŁĄD TRASY",
+                        dotColor = MazoviaColors.StatusRecRed,
+                        textColor = MazoviaColors.StatusRecRed
+                    )
+                }
                 pl.mazovia.offroad.domain.model.NavigationStatus.ARRIVED -> {
                     StatusPill(
                         text = "ARRIVED",
