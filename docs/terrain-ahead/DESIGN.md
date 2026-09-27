@@ -93,6 +93,43 @@ Operator decision 2026-09-27. Pre-change `DESIGN.md` blob `0fcb5b9e4c87654059818
 - Sections touched: §1, §3.7, §14 (heading note), §16.1 (D note, route-changed row), §17.1, §21 (D column), §22.5,
   §23 (TA-007C), §24 (NEW), §26 (OD-1/OD-2/OD-8), §27 (item 14), §29.
 
+### 0.4 TA-000B-C4 — building blocks beside the corridor (Option D + grid + buildings)
+
+Operator decision 2026-09-27: C4 approved with OD-10 = (a) and OD-11 = LoD1 later. Pre-change `DESIGN.md` blob `60a7304d832ed4aacbbe72068490108290ede306` (HEAD `5b77d08`).
+Only this file changed.
+
+- **Why:** the operator wants the real buildings along the route as simple blocks in TEREN, so the view reads like the place
+  being ridden through. A source audit of OSM, EGiB and GUGiK LoD1 on a real corridor (Siedlce, 1.86 km × ±200 m) is in
+  `docs/terrain-ahead/building-source-audit/2026-09-27-siedlce/REPORT.md` (SOURCE-READ): OSM 530 footprints (2 with `height`,
+  371 with `building:levels`), EGiB 464 (no heights), LoD1 371 (all with height, source year 2023); geometry agreement
+  OSM–EGiB median IoU 0.997, OSM–LoD1 0.995; OSM ↔ LoD1 match 346 / 530 at IoU ≥ 0.5.
+- **V1 = Option D + shaded terrain grid + building blocks (§3.7):** OSM building footprints whose outline intersects the
+  ±200 m band of the corridor window, extruded as flat-roofed prisms standing on the grid's terrain, shaded with the grid's
+  light and fog, painter's order far → near, Compose Canvas. No 3D engine, no depth buffer.
+- **Data (runtime):** a separate buildings-only vector archive `buildings_mazowsze_z14.pmtiles` (PMTiles v3, MVT, z14, one
+  layer `building`) next to the DEM archive, built offline in `tools/tiles/buildings/`. Attributes per footprint:
+  `height`, `min_height`, `levels`, `min_level` (parsed numbers, unparseable → absent), `h_src`. The MAP archive
+  `mazowieckie_offroad.pmtiles`, its `process.lua` and the map style are **not** changed (MAP isolation, §19.4).
+- **Height rule (render-only):** `h_src = tag` → `height − min_height` from OSM; `h_src = levels` → `levels × 3.0 m`
+  (ESTIMATED, OD-10); no height and no levels → drawn as a low neutral block of 3.0 m in a lighter, clearly different tone
+  (ESTIMATED placeholder, OD-10), never 0 m and never counted as data. Building heights are **not** multiplied by the
+  vertical exaggeration; only the base follows the exaggerated terrain.
+- **Base:** min of `ElevationSampler` over the footprint vertices, relative to the corridor base × exaggeration (same rule
+  as the grid). Any unavailable vertex sample → the building is not drawn (never on 0 m).
+- **Order and occlusion:** grid → buildings (far → near by footprint centroid distance; back-facing walls culled) →
+  road, edges, route line, overlays on top. Buildings never hide the road, route line or signs (same rule as the C3 grid).
+  Buildings whose footprint lies within 8 m of the window polyline or within 25 m of the camera are skipped (TARGET, tuned
+  on the S25). Known limitations: large or concave footprints can sort wrongly against neighbours; buildings are not hidden
+  by terrain crests.
+- **Invariants:** building data never feeds Raw/Filtered/Grade profiles, `GradeEventDetector` or navigation; a missing
+  buildings archive, a corrupt tile or a build failure → corridor + grid without buildings (TA-007C look), never MAP breakage;
+  no network access at runtime.
+- **Later (not in C4):** GUGiK LoD1 heights conflated offline into the same archive only where footprints match (IoU ≥ 0.5,
+  no split/merge conflicts, fresher explicit OSM tags kept), with source year kept in `h_src`; EGiB only as an offline
+  control. Licences: OSM ODbL attribution; LoD1 CC BY 4.0; EGiB reuse terms unresolved (§27 item 15).
+- Sections touched: §1, §3.7, §16.1 (C4 note), §17.1, §21 (D column), §22.5, §23 (TA-007D), §24 (NEW), §26 (OD-10, OD-11),
+  §27 (item 15), §29.
+
 ---
 
 ## 1. Executive decision
@@ -100,7 +137,8 @@ Operator decision 2026-09-27. Pre-change `DESIGN.md` blob `0fcb5b9e4c87654059818
 1. **V1 visual mode — DECIDED (TA-000B-C2, 2026-09-27): Option D "road-ahead corridor"** (§3.7): next 600 m of the route's
    real geometry in perspective from a chase camera, surface-coloured road ribbon, grade-coloured edges, maneuver sign, distance
    gates, rendered with Compose Canvas. **TA-000B-C3 (§0.3):** plus a shaded terrain grid (25 m, ±200 m around the corridor
-   window), still Compose Canvas, no GPU mesh or 3D engine. The original TA-000B recommendation was Option C (profile strip);
+   window), still Compose Canvas, no GPU mesh or 3D engine. **TA-000B-C4 (§0.4):** plus OSM building blocks in the same
+   band, from a separate buildings archive, still Compose Canvas. The original TA-000B recommendation was Option C (profile strip);
    it is superseded.
    **True 3D with a terrain mesh (Option A) is not abandoned**: it stays behind gate **G-3D** (glance test + renderer spike) and
    becomes V1.1/V2 only if it measurably beats Option D (§26 OD-1, OD-2).
@@ -303,8 +341,16 @@ Geometry (TARGETS unless stated; tuned in TA-007B on the S25):
   as a dashed / translucent route line over the grid. Grid heights are render-only (never feed profiles or events); no
   §14.5 blending. Known limitation: no depth test — terrain beside the route never hides the road, and on a descent beyond a
   crest the terrain hides the drop. A grid failure leaves the corridor without a grid.
+- **Building blocks (TA-000B-C4, §0.4):** footprints from `buildings_mazowsze_z14.pmtiles` (layer `building`, z14)
+  whose outline intersects the grid band; at most 600 per window (nearest to the window polyline first, TARGET); footprints
+  simplified to ≤ 32 vertices (TARGET). Prism = base (min DEM over the footprint vertices, relative to the corridor base
+  × exaggeration) + height (§0.4 height rule, not exaggerated). Walls Lambert-shaded with the grid's light, flat roof one tone
+  lighter, grid fog; estimated heights (levels) in the normal tone, placeholder blocks (no height data) in a lighter tone.
+  Drawn after the grid and before the road, far → near by centroid, back-facing walls culled. Skipped: any unavailable base
+  sample, footprints within 8 m of the window polyline or 25 m of the camera (TARGETS). Built on `Default` with the grid;
+  the UI thread only projects and draws. Building data is render-only. A buildings failure leaves corridor + grid.
 - **Not in V1:** GPU terrain mesh / 3D engine (Option A, G-3D), side roads at junctions (need OSM junction data that the frozen
-  `Route` does not carry, §27), land-cover colouring, forests, buildings, imagery.
+  `Route` does not carry, §27), land-cover colouring, forests, imagery, roof shapes, textures, LoD1 heights (§0.4 "Later").
 
 Reference mock-up (2026-09-27, synthetic route): https://claude.ai/artifact/RBFYBbJhCEjL9FnBfejdEc (private to the operator).
 Low relief: at ×1 Mazovian climbs are barely visible (INFERRED from the mock-up); exaggeration is the mitigation, bounded by R2.
@@ -1236,6 +1282,9 @@ C3 additions (§0.3): the gap span on the ribbon is the grey "brak danych" of §
 wording means the same span); DEM tile missing → hole in the terrain grid, corridor continues; grid build failure → corridor
 without the grid (TA-007B look), no MAP fallback needed; route changed → frozen greyed corridor and grid until the new window,
 "ładowanie" label only after 1 s.
+C4 additions (§0.4): buildings archive missing / corrupt tile / building build failure → corridor + grid without
+buildings (diagnostic logged, no user-facing error); DEM missing under a footprint → that building is not drawn; route changed
+→ buildings frozen and greyed with the corridor and grid.
 
 ### 16.2 Reachable vs unwired states
 
@@ -1271,6 +1320,8 @@ Terrain handles unwired states defensively only; it does not wire them (§27).
 | Corridor window geometry (D): plan + Display heights for `[s − 20, s + 600]` | `Default`, rebuilt when the window advances | view-scoped |
 | Corridor projection + Canvas draw (D) | main thread, per frame; preallocated buffers, no per-frame allocation | view-scoped |
 | Terrain grid build (D + grid, C3): lattice sampling + cell shading for the ±200 m band | `Default`, rebuilt when the window advances; never on the UI thread | view-scoped |
+| Buildings archive open + MVT tile read/decode (C4) | `IO` for reads, `Default` for decode; decoded z14 tiles cached (LRU) | ride-scoped |
+| Building blocks build (C4): band selection, base sampling, prism faces + shading | `Default`, with the grid rebuild; never on the UI thread | view-scoped |
 | Cache eviction | `Default`, on progress events | ride-scoped |
 
 ### 17.2 Cancellation
@@ -1420,6 +1471,9 @@ Device class (TARGET): Android 12+, 4–6 GB RAM, 2021–2023 mid-range SoC with
 | Corridor window geometry rebuild | — | ≤ 5 ms, background | — |
 | Terrain grid build (C3) | — | ≤ 10 ms p95, background (S25 mock-up MEASURED prep p95 ≤ 5.4 ms) | — |
 | Frame time p95 incl. terrain grid (C3) | — | ≤ 10 ms projection + draw on main thread (S25 mock-up MEASURED ≤ 8.9 ms) | — |
+| Building blocks build (C4), incl. tile decode from a warm cache | — | ≤ 10 ms p95, background; cold tile decode ≤ 30 ms p95, background | — |
+| Frame time p95 incl. grid + buildings (C4) | — | ≤ 12 ms projection + draw on main thread (TARGET; to be MEASURED in TA-007D) | — |
+| Buildings storage (C4) | — | Mazowsze archive ≤ 150 MB (ESTIMATED; MEASURED in TA-007D) | — |
 | Chunk mesh build | — | — | ≤ 8 ms per chunk, background |
 | GPU upload per chunk | — | — | ≤ 2 ms |
 | MAP → TERRAIN | ≤ 300 ms | ≤ 300 ms | ≤ 500 ms warm, ≤ 1 500 ms cold |
@@ -1573,7 +1627,9 @@ with GPS altitude used only as a weak cross-check (ellipsoidal datum, §7.5).
 Option C: screenshot tests of the instrument for scripted states. Option D (V1): screenshot tests for scripted poses and states
 (straight, climb, crest with occlusion, 90° turn, S-bends, coverage gap, off-route, stale, GPX); no geometry drawn behind the camera;
 projection unit tests (known pose → known screen points). C3 grid scenes: full coverage, coverage hole (no 0 m, cells dropped),
-crest with a descent beyond it (route line visible over the grid), grid disabled (identical to the TA-007B corridor). Option A: visual check that ribbon never intersects terrain in the
+crest with a descent beyond it (route line visible over the grid), grid disabled (identical to the TA-007B corridor). C4
+building scenes: dense street (T7), tall building beside a bend (road stays on top), placeholder block (no height data),
+DEM hole under a footprint (building absent), buildings archive missing (identical to the TA-007C view). Option A: visual check that ribbon never intersects terrain in the
 test scene, no gaps at chunk seams, active route visible in all states.
 
 ### 22.6 One-second glance test
@@ -1693,7 +1749,8 @@ TA-009 → TA-010 (V1); then mock-up glance G-3D → TA-002 → TA-003/004 as V1
 **OPTION D (selected, TA-000B-C2)** — as-built status and order:
 TA-001A → TA-001B (G-DATA) → TA-005(C) → TA-006 (switch + strip, done) → **TA-007** (repurposed by operator 2026-09-26: runtime
 terrain elevation wiring — real archive → profile visible in TEREN; prototype exists, review pending) → **TA-007B** (corridor
-renderer, below; done ae90629) → **TA-007C** (shaded terrain grid, TA-000B-C3, below) → glance/sunlight UX tuning on the
+renderer, below; done ae90629) → **TA-007C** (shaded terrain grid, TA-000B-C3, below; done 5b77d08) → **TA-007D** (building
+blocks, TA-000B-C4, below) → glance/sunlight UX tuning on the
 corridor (§22.6–§22.7) → TA-008 (practical Mazowsze coverage + readiness) → TA-009 → TA-010 (V1). Then G-3D (A vs D + grid) →
 TA-002 → TA-003/004 as V1.1/V2.
 
@@ -1725,6 +1782,28 @@ TA-002 → TA-003/004 as V1.1/V2.
 - DoD: grid visible on the physical S25 with the real archive; draw p95 and grid build p95 recorded (§21, D column); grid built
   off the UI thread (no rebuild spike on the UI thread); no regression in MAP/navigation.
 - STOP: any need to change a frozen class or navigation semantics → OPEN DECISION.
+
+**TA-007D — Building blocks beside the corridor (Option D + grid + buildings, V1)**
+- GOAL: draw real OSM buildings along the route as simple blocks in TEREN (§3.7 C4 bullet), first on T7-WARSZAWA.
+- WHY: operator request TA-000B-C4 (§0.4); source choice from the building source audit (OSM first, LoD1 later).
+- INPUTS: §0.4, §3.7, §16.1 (C4 note), §17.1, §21 (D column), §22.5; audit `docs/terrain-ahead/building-source-audit/`.
+- OUTPUTS: (1) `tools/tiles/buildings/` — buildings-only tilemaker profile + config + README (inputs, versions and SHA-256 of
+  the OSM extract recorded); pilot archive for the T7 transect bbox (+ 1 km), then the Mazowsze archive (not committed);
+  (2) `:terrain` `MvtDecoder` (building polygons + numeric attributes only; pure Kotlin; reuses `PmtilesReader`) and
+  `BuildingBlocks` (band selection, base sampling, height rule, prism faces, shading; pure Kotlin, no Android);
+  (3) buildings archive discovery beside the DEM archive, build on `Default` with the grid, buildings pass in
+  `RoadAheadCorridor`; no-archive / failure → TA-007C view.
+- FROZEN: §24 frozen set; `TerrainSourceBoundaryTest` unchanged; navigation semantics unchanged; `tools/tiles/process.lua`,
+  `tools/tiles/config.json`, the map style and the MAP archive unchanged.
+- TESTS: MVT decoder (hand-made tiles: winding, holes, multipolygon, clipped tile edges, bad attribute values); height rule
+  (tag / levels / placeholder, never 0 m, exaggeration not applied to height); band membership; DEM hole → building absent;
+  building data never reaching profiles/events; painter order deterministic; screenshot/state tests per §22.5 (C4 scenes).
+- MEASUREMENTS on the S25 (mock drive with speed on T7): buildings build p95 (warm/cold), frame p95 with grid + buildings,
+  building count per window, archive size (pilot and Mazowsze), memory of the decoded tile cache.
+- DoD: blocks visible on the physical S25 on T7 with the pilot archive; §21 C4 rows MEASURED; TA-007C budgets not regressed
+  beyond the C4 targets; no regression in MAP/navigation; archive missing → TA-007C view.
+- STOP: any need to change a frozen class, navigation semantics or the MAP archive/style → OPEN DECISION; frame p95 > 12 ms
+  after reasonable tuning → report and stop (operator decides on caps / distance).
 
 ---
 
@@ -1767,6 +1846,9 @@ TA-002 → TA-003/004 as V1.1/V2.
 | `terrain/src/main/java/pl/mazovia/offroad/terrain/presentation/CorridorGeometry.kt` | :terrain | Option D window geometry: plan points (render-scene ENU) + Display heights + gap/event/surface/maneuver annotations; pure Kotlin | projection, profiles | 007B |
 | `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadCorridor.kt` | :app | Option D Canvas renderer: chase camera, projection, painter's order, overlays, HUD; C3 grid pass + beyond-crest route line (007C) | compose, :terrain | 007B/007C |
 | `terrain/src/main/java/pl/mazovia/offroad/terrain/presentation/TerrainGrid.kt` | :terrain | C3 terrain grid: fixed 25 m lattice, ±200 m band around the corridor window, NaN holes, cell list + shading; pure Kotlin (exact file split decided in TA-007C) | elevation, presentation | 007C |
+| `terrain/src/main/java/pl/mazovia/offroad/terrain/buildings/MvtDecoder.kt` | :terrain | C4: minimal MVT decode of layer `building` (polygons + numeric attributes); pure Kotlin | `PmtilesReader` varints, JDK | 007D |
+| `terrain/src/main/java/pl/mazovia/offroad/terrain/buildings/BuildingBlocks.kt` | :terrain | C4: band selection, base from `ElevationSampler`, height rule, prism faces + shading; pure Kotlin (exact split decided in TA-007D) | elevation, presentation | 007D |
+| `tools/tiles/buildings/**` | tools | C4: buildings-only tilemaker profile + config + README; archive not committed | tilemaker (version recorded) | 007D |
 
 Note (TA-000B-C2): the as-built strip lives at `app/src/main/java/pl/mazovia/offroad/ui/riding/terrain/RoadAheadInstrument.kt`
 (not `:designsystem` as planned above); TA-007B retires it from TEREN.
@@ -1888,6 +1970,19 @@ Covered per row above; any risk becoming an issue is recorded in the owning task
 
 **OD-6 Frozen-class exceptions** — none requested.
 
+**OD-10 Building height when OSM has no `height` — DECIDED 2026-09-27 (TA-000B-C4): (a)**
+- OPTIONS: (a) `levels × 3.0 m`, and a 3.0 m placeholder block in a lighter tone when there are no levels either (recommended);
+  (b) as (a) but draw only the flat footprint when there are no levels; (c) draw only buildings with an explicit `height`.
+- RECOMMENDATION: (a) — in the audit sample only 2 / 530 OSM buildings carry `height`, 371 carry levels; (c) would show almost
+  nothing, (b) leaves ~30 % of buildings flat. The multiplier and the placeholder are estimates, marked as such, never data.
+- EVIDENCE: `building-source-audit/2026-09-27-siedlce/metrics.json`; S25 look on T7.
+
+**OD-11 GUGiK LoD1 heights — DECIDED 2026-09-27 (TA-000B-C4): LoD1 later, OSM only in TA-007D**
+- OPTIONS: OSM only in TA-007D, LoD1 conflation as a later task (recommended) / LoD1 inside TA-007D.
+- RECOMMENDATION: later — OSM is enough for a device-visible result; LoD1 needs offline conflation (match rules, split/merge
+  conflicts, source dates, vertical datum of the LoD1 base vs the DEM) and adds a second licence to track.
+- EVIDENCE: audit match rate 346 / 530 at IoU ≥ 0.5.
+
 **OD-9 G-DATA non-PASS outcomes (added in TA-000B-C1)**
 - OPTIONS when G-DATA-3 is INCONCLUSIVE (< 50 eligible events): add routes / add hillier validation corridors / reduce reliance on
   the event gate for V1 / review detector thresholds as a new declared experiment. When G-DATA-4 is REVIEW: change `FilterConfig`
@@ -1926,6 +2021,8 @@ Not designed, not fixed here:
 12. Corridor (D) side roads at junctions: needs OSM junction geometry outside the frozen `Route` model (separate data source).
 13. Corridor (D) land-cover colouring of shoulders from OSM (forest / field / water).
 14. GPU terrain mesh / 3D engine under the corridor (Option A) — only via G-3D (the CPU/Canvas shaded grid is in V1 since C3).
+15. Buildings (C4) follow-ups: GUGiK LoD1 height conflation (OD-11); EGiB as an offline footprint control; EGiB reuse terms
+    before any distribution; roof shapes; buildings in the MAP archive/style (separate MAP task, not Terrain Ahead).
 
 ---
 
@@ -1960,7 +2057,8 @@ V1 (D-path since TA-000B-C2) is complete when **all** hold (TARGET thresholds, m
 the C-path; for D read "instrument" as "corridor", Visual continuity uses the §21 D frame budget, Battery/thermal is ≤ +5 % (§21.4),
 Missing-data fallback uses the §3.7 gap rendering, and the glance and sunlight tests run on the corridor. Since TA-000B-C3 the
 corridor includes the shaded terrain grid (§3.7): its draw and build budgets (§21, D column) and the C3 scenes (§22.5) are part of
-Visual continuity and Missing-data fallback.
+Visual continuity and Missing-data fallback. Since TA-000B-C4 the same holds for the building blocks: their build and
+frame budgets (§21, D column) and the C4 scenes (§22.5); a missing buildings archive is not a V1 failure (TA-007C view).
 
 | Area | Criterion |
 |---|---|
