@@ -67,9 +67,11 @@ Use in reports: **VERIFIED** (checked in this run), **SOURCE-READ** (read from c
 ## Stan prac
 - TA-007B (korytarz D) na `main`: **ae90629** (2026-09-27), S25 VERIFIED (T7, 9 scen §22.5, jazda fix3 z reroute).
 - Kierunek (D → TA-007C → G-3D): https://claude.ai/artifact/Vq3L8uJJ8vPg3wXyPPCx1d; wygląd: `docs/terrain-ahead/visualizations/driver-view/` (nieśledzone).
-- TA-000B-C3 (DESIGN §0.3, nieskomitowane): V1 = korytarz D + cieniowana siatka; luka = szary „brak danych”; po reroute
+- TA-000B-C3 (DESIGN §0.3, 6d9fcb5): V1 = korytarz D + cieniowana siatka; luka = szary „brak danych”; po reroute
   zamrożony wyszarzony widok, „ładowanie” po 1 s.
-- TA-007C (nieskomitowane): `TerrainGrid` (25 m / ±200 m, dziury NaN), `buildGrid` (Mutex), siatka w `CorridorPainter`, `Reloading`.
+- TA-007C (5b77d08): `TerrainGrid` (25 m / ±200 m, dziury NaN), `buildGrid` (Mutex), siatka w `CorridorPainter`, `Reloading`.
+- TA-000B-C4 (DESIGN §0.4, zaakceptowane 2026-09-27): bryły budynków OSM przy trasie, osobne archiwum
+  `buildings_mazowsze_z14.pmtiles`; OD-10 = kondygnacje × 3 m / blok 3 m; OD-11 = LoD1 później. Następne: TA-007D (§23), pilot T7.
   S25 VERIFIED mock jazda T7 z prędkością: 83 przebudowy, build p95 13 ms (z prefetchem), draw p95 3,6 ms, gfxinfo jank 0,12 %.
 - Review TA-007C (2026-09-27) + poprawki R1–R5: szybszy test pasa, `placeIn`, reset siatki po błędzie, sceny C3 10–15 i bench
   z siatką (S25 VERIFIED 4/4: grid sample warm p95 4,2 ms, draw z siatką p95 ≤ 9 ms). Testy: terrain 153, app 107.
